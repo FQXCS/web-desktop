@@ -198,12 +198,12 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     <form id="config-form" class="form">
       <div class="field">
         <label for="web_command">服务启动命令（web_command）<span class="req">*</span></label>
-        <input type="text" id="web_command" required placeholder="例如：python -m http.server 8080 --bind 127.0.0.1">
+        <input type="text" id="web_command" required placeholder="例如：dsh.cmd web">
         <div class="help">完整命令行字符串；可执行文件路径含空格时请用双引号包裹。</div>
       </div>
       <div class="field">
         <label for="web_url">服务地址（web_url）<span class="req">*</span></label>
-        <input type="url" id="web_url" required pattern="https?://.*" placeholder="例如：http://127.0.0.1:8080">
+        <input type="url" id="web_url" required pattern="https?://.*" placeholder="例如：http://127.0.0.1:3080">
         <div class="help">服务就绪后跳转的地址，也是健康检查地址；必须以 http:// 或 https:// 开头。</div>
       </div>
       <details id="advanced">
