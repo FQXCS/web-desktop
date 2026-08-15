@@ -268,11 +268,58 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     // 当前配置（由 Python 端注入，用于回填表单）
     var CONFIG = $CONFIG_JSON;
 
-    // 桥接兼容：顶层加载（首次启动 / 错误页进入）时使用 window.pywebview；
-    // 作为遮罩 iframe（srcdoc，同源）加载在目标网页上时，桥在父窗口上
-    var bridgeApi = (window.pywebview && window.pywebview.api) ||
-      (window.parent && window.parent !== window && window.parent.pywebview && window.parent.pywebview.api) ||
-      null;
+    // 桥接就绪等待超时毫秒数：超时后提示重启应用并恢复保存按钮
+    var BRIDGE_READY_TIMEOUT_MS = 10000;
+    // 桥接就绪轮询间隔毫秒数
+    var BRIDGE_POLL_INTERVAL_MS = 200;
+
+    // 动态解析当前可用的桥对象：pywebview 在页面加载完成（NavigationCompleted）
+    // 之后才注入 window.pywebview 与 api，因此不能在脚本加载时缓存，必须按需解析。
+    // 顶层加载（首次启动 / 错误页进入）时桥位于 window.pywebview；
+    // 作为遮罩 iframe（srcdoc，同源）加载在目标网页上时，桥位于父窗口。
+    function resolveBridgeApi() {
+      var api = window.pywebview && window.pywebview.api;
+      // api 对象已创建但函数尚未填充（空对象）时视为未就绪
+      if (api && typeof api.save_config === 'function') { return api; }
+      var parentWindow = window.parent;
+      if (parentWindow && parentWindow !== window && parentWindow.pywebview) {
+        var parentApi = parentWindow.pywebview.api;
+        if (parentApi && typeof parentApi.save_config === 'function') { return parentApi; }
+      }
+      return null;
+    }
+
+    // 桥就绪后执行回调：pywebview 注入完成时会派发 pywebviewready 事件，
+    // 但事件可能已错过（页面脚本运行时注入早已完成）或派发在父窗口，
+    // 因此事件监听与轮询双保险；超时后提示重启应用。
+    function whenBridgeReady(callback) {
+      var startedAt = Date.now();
+      var finished = false;
+
+      function tryResolve() {
+        if (finished) { return; }
+        var api = resolveBridgeApi();
+        if (api) {
+          finished = true;
+          callback(api);
+          return;
+        }
+        if (Date.now() - startedAt >= BRIDGE_READY_TIMEOUT_MS) {
+          finished = true;
+          setStatus('页面桥接不可用，请重启应用', 'error');
+          setSaveEnabled(true);
+          return;
+        }
+        setTimeout(tryResolve, BRIDGE_POLL_INTERVAL_MS);
+      }
+
+      window.addEventListener('pywebviewready', tryResolve);
+      // 遮罩 iframe 模式下事件在父窗口派发（srcdoc 与父页面同源，可直接订阅）
+      if (window.parent && window.parent !== window) {
+        window.parent.addEventListener('pywebviewready', tryResolve);
+      }
+      tryResolve();
+    }
 
     function setValue(id, value) {
       document.getElementById(id).value = (value === undefined || value === null) ? '' : value;
@@ -287,7 +334,8 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     }
     function closeConfigOverlay() {
       // 右上角「✕」：关闭遮罩并返回来源页面（顶层首次配置页不显示该按钮）
-      if (bridgeApi) { bridgeApi.exit_config_page(); }
+      var api = resolveBridgeApi();
+      if (api) { api.exit_config_page(); }
     }
 
     // 遮罩模式（iframe 内）下支持 Esc 关闭配置页
@@ -314,7 +362,6 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
 
     document.getElementById('config-form').addEventListener('submit', function (event) {
       event.preventDefault();
-      if (!bridgeApi) { setStatus('页面桥接不可用，请重启应用', 'error'); return; }
       // 高级设置折叠时若其中存在必填项未通过校验，先自动展开再提示
       var advanced = document.getElementById('advanced');
       var requiredInputs = advanced.querySelectorAll('input[required]');
@@ -344,23 +391,27 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
 
       setSaveEnabled(false);
       setStatus('正在保存…');
-      bridgeApi.save_config(payload).then(function (result) {
-        if (result && result.ok) {
-          setStatus(result.message || '保存成功，程序即将自动重启…', 'success');
-          // 延时重启：给用户看到保存成功提示的时间
-          setTimeout(function () { bridgeApi.restart_app(); }, 800);
-        } else {
-          setStatus((result && result.message) || '保存失败，请检查填写内容', 'error');
+      // 桥接在页面加载完成后才注入：等待就绪后再提交保存
+      whenBridgeReady(function (api) {
+        api.save_config(payload).then(function (result) {
+          if (result && result.ok) {
+            setStatus(result.message || '保存成功，程序即将自动重启…', 'success');
+            // 延时重启：给用户看到保存成功提示的时间
+            setTimeout(function () { api.restart_app(); }, 800);
+          } else {
+            setStatus((result && result.message) || '保存失败，请检查填写内容', 'error');
+            setSaveEnabled(true);
+          }
+        }).catch(function (error) {
+          setStatus('保存失败：' + error, 'error');
           setSaveEnabled(true);
-        }
-      }).catch(function (error) {
-        setStatus('保存失败：' + error, 'error');
-        setSaveEnabled(true);
+        });
       });
     });
 
     document.getElementById('btn-exit').addEventListener('click', function () {
-      if (bridgeApi) { bridgeApi.exit_app(); }
+      var api = resolveBridgeApi();
+      if (api) { api.exit_app(); }
     });
   </script>
 </body>
