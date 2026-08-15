@@ -102,8 +102,8 @@ class WebServiceManager:
             )
 
         # 准备日志文件（服务 stdout/stderr 均写入该文件，便于排查启动失败原因）
-        # log_dir 默认 ~/.WebDesktop（配置加载时已转为绝对路径），此处兜底展开 ~ 并回退
-        log_dir = self._config.get("log_dir") or os.path.join(get_app_dir(), "logs")
+        # log_dir 默认 ~/.WebDesktop/log（配置加载时已转为绝对路径），此处兜底展开 ~ 并回退
+        log_dir = self._config.get("log_dir") or os.path.join(get_app_dir(), "log")
         log_dir = expand_home_path(log_dir)
         os.makedirs(log_dir, exist_ok=True)
         self._log_path = os.path.join(log_dir, "web_service.log")
@@ -115,7 +115,7 @@ class WebServiceManager:
         if not self._config.get("show_console", False):
             creation_flags |= subprocess.CREATE_NO_WINDOW
 
-        # 工作目录默认 ~/.WebDesktop；目录不存在时自动创建，避免启动失败
+        # 工作目录默认 ~/.WebDesktop/working；目录不存在时自动创建，避免启动失败
         working_dir = self._config.get("working_dir") or None
         if working_dir:
             working_dir = expand_home_path(working_dir)

@@ -18,8 +18,8 @@ DEFAULT_CONFIG = {
     "web_command": "",
     # 服务地址：服务就绪后跳转的地址（必填，无默认值）
     "web_url": "",
-    # 服务工作目录：默认 ~/.WebDesktop
-    "working_dir": "~/.WebDesktop",
+    # 服务工作目录：默认 ~/.WebDesktop/working
+    "working_dir": "~/.WebDesktop/working",
     # 等待服务就绪的超时秒数
     "startup_timeout": 60,
     # 健康检查轮询间隔（秒）
@@ -34,8 +34,8 @@ DEFAULT_CONFIG = {
     "show_console": False,
     # 关闭窗口时是否终止服务进程
     "kill_on_exit": True,
-    # 日志目录：默认 ~/.WebDesktop
-    "log_dir": "~/.WebDesktop",
+    # 日志目录：默认 ~/.WebDesktop/log
+    "log_dir": "~/.WebDesktop/log",
 }
 
 # 配置项的中文名称（校验提示信息用）

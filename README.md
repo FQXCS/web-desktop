@@ -49,8 +49,8 @@ web-desktop/
 | --- | --- | --- |
 | `web_command` | 服务启动命令（完整命令行字符串，含空格的路径用双引号包裹） | 无默认值，必填 |
 | `web_url` | 服务就绪后跳转的地址（也是健康检查地址） | 无默认值，必填 |
-| `working_dir` | 服务进程工作目录 | `~/.WebDesktop` |
-| `log_dir` | 日志目录（服务日志与程序日志） | `~/.WebDesktop` |
+| `working_dir` | 服务进程工作目录 | `~/.WebDesktop/working` |
+| `log_dir` | 日志目录（服务日志与程序日志） | `~/.WebDesktop/log` |
 | `startup_timeout` | 等待服务就绪的超时秒数 | `60` |
 | `check_interval` | 健康检查轮询间隔（秒） | `0.5` |
 | `check_timeout` | 单次健康检查超时（秒） | `2` |
@@ -107,7 +107,7 @@ powershell -ExecutionPolicy Bypass -File create_shortcut.ps1   # 创建桌面快
   `web_command` 等参数，也可临时将 `show_console` 改为 `true` 观察服务真实输出。
 - **一直等待不跳转**：确认 `web_url` 与服务的实际监听端口一致；健康检查以 HTTP
   响应为准，若服务不是 HTTP 协议请调整检查方式。
-- **日志位置**：默认在 `~/.WebDesktop\` 目录下：`app.log`（程序日志）、
+- **日志位置**：默认在 `~/.WebDesktop/log\` 目录下：`app.log`（程序日志）、
   `web_service.log`（服务日志），可通过 `log_dir` 修改。
 - **如何恢复默认配置**：退出程序后删除 `~/.WebDesktop/config.json`，
   下次启动会自动重建并进入配置页面。

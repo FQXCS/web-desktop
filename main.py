@@ -36,8 +36,8 @@ def show_fatal_error(message: str) -> None:
 
 
 def setup_logging(config: dict) -> None:
-    """初始化日志：输出到配置项 log_dir 指定的目录（默认 ~/.WebDesktop）。"""
-    log_dir = config.get("log_dir") or os.path.join(get_config_dir(), "logs")
+    """初始化日志：输出到配置项 log_dir 指定的目录（默认 ~/.WebDesktop/log）。"""
+    log_dir = config.get("log_dir") or os.path.join(get_config_dir(), "log")
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, LOG_FILE_NAME)
     logging.basicConfig(
