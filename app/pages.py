@@ -118,7 +118,7 @@ ERROR_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     </div>
     <div class="actions">
       <button class="btn btn-primary" onclick="pywebview.api.retry()">重 试</button>
-      <button class="btn btn-ghost" onclick="pywebview.api.open_config_page()">打开配置</button>
+      <button class="btn btn-ghost" onclick="pywebview.api.open_config_page('error')">打开配置</button>
       <button class="btn btn-ghost" onclick="pywebview.api.exit_app()">退 出</button>
     </div>
   </div>
@@ -140,7 +140,14 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     min-height: 100vh; padding: 36px 20px 64px;
     display: flex; justify-content: center; align-items: flex-start;
   }
-  .card { width: 760px; max-width: 100%; background: #1e293b; border-radius: 12px; padding: 34px 38px; }
+  .card { width: 760px; max-width: 100%; background: #1e293b; border-radius: 12px; padding: 34px 38px; position: relative; }
+  .close-btn {
+    position: absolute; top: 12px; right: 12px;
+    width: 34px; height: 34px; border: none; border-radius: 8px;
+    background: transparent; color: #94a3b8; font-size: 18px; line-height: 34px;
+    text-align: center; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .close-btn:hover { background: rgba(148, 163, 184, 0.15); color: #f87171; }
   .title { text-align: center; font-size: 20px; font-weight: 600; letter-spacing: 1px; }
   .sub { margin-top: 10px; text-align: center; font-size: 13px; color: #94a3b8; line-height: 1.9; }
   .sub .path { color: #38bdf8; font-family: Consolas, monospace; }
@@ -182,6 +189,7 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
 </head>
 <body>
   <div class="card">
+    <button type="button" class="close-btn" style="display: $CLOSE_DISPLAY;" onclick="closeConfigOverlay()" title="关闭配置页" aria-label="关闭配置页">✕</button>
     <div class="title">应用配置</div>
     <div class="sub">
       请填写服务启动命令与服务地址（必填），其余参数为高级设置（已填入默认值）。<br>
@@ -260,6 +268,12 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     // 当前配置（由 Python 端注入，用于回填表单）
     var CONFIG = $CONFIG_JSON;
 
+    // 桥接兼容：顶层加载（首次启动 / 错误页进入）时使用 window.pywebview；
+    // 作为遮罩 iframe（srcdoc，同源）加载在目标网页上时，桥在父窗口上
+    var bridgeApi = (window.pywebview && window.pywebview.api) ||
+      (window.parent && window.parent !== window && window.parent.pywebview && window.parent.pywebview.api) ||
+      null;
+
     function setValue(id, value) {
       document.getElementById(id).value = (value === undefined || value === null) ? '' : value;
     }
@@ -270,6 +284,17 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     }
     function setSaveEnabled(enabled) {
       document.getElementById('btn-save').disabled = !enabled;
+    }
+    function closeConfigOverlay() {
+      // 右上角「✕」：关闭遮罩并返回来源页面（顶层首次配置页不显示该按钮）
+      if (bridgeApi) { bridgeApi.exit_config_page(); }
+    }
+
+    // 遮罩模式（iframe 内）下支持 Esc 关闭配置页
+    if (window.parent && window.parent !== window) {
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { closeConfigOverlay(); }
+      });
     }
 
     // 回填当前配置
@@ -289,6 +314,7 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
 
     document.getElementById('config-form').addEventListener('submit', function (event) {
       event.preventDefault();
+      if (!bridgeApi) { setStatus('页面桥接不可用，请重启应用', 'error'); return; }
       // 高级设置折叠时若其中存在必填项未通过校验，先自动展开再提示
       var advanced = document.getElementById('advanced');
       var requiredInputs = advanced.querySelectorAll('input[required]');
@@ -318,11 +344,11 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
 
       setSaveEnabled(false);
       setStatus('正在保存…');
-      pywebview.api.save_config(payload).then(function (result) {
+      bridgeApi.save_config(payload).then(function (result) {
         if (result && result.ok) {
           setStatus(result.message || '保存成功，程序即将自动重启…', 'success');
           // 延时重启：给用户看到保存成功提示的时间
-          setTimeout(function () { pywebview.api.restart_app(); }, 800);
+          setTimeout(function () { bridgeApi.restart_app(); }, 800);
         } else {
           setStatus((result && result.message) || '保存失败，请检查填写内容', 'error');
           setSaveEnabled(true);
@@ -334,7 +360,7 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     });
 
     document.getElementById('btn-exit').addEventListener('click', function () {
-      pywebview.api.exit_app();
+      if (bridgeApi) { bridgeApi.exit_app(); }
     });
   </script>
 </body>
@@ -377,13 +403,14 @@ def build_error_page(title: str, message: str, log_tail: str = "", max_log_lines
     )
 
 
-def build_config_page(config: dict, config_path: str = "") -> str:
+def build_config_page(config: dict, config_path: str = "", show_close: bool = False) -> str:
     """
     生成配置页面 HTML：回填当前配置，全部字段必填，高级设置默认折叠。
 
     Args:
         config: 当前配置字典（用于回填表单）。
         config_path: 配置文件路径（展示用），为空时自动获取。
+        show_close: 是否显示右上角关闭按钮（遮罩式进入时显示，点击返回来源页面）。
 
     Returns:
         完整 HTML 字符串。
@@ -393,4 +420,49 @@ def build_config_page(config: dict, config_path: str = "") -> str:
     return CONFIG_PAGE_TEMPLATE.substitute(
         CONFIG_JSON=config_json,
         CONFIG_PATH=html.escape(config_path or get_config_path()),
+        CLOSE_DISPLAY="block" if show_close else "none",
+    )
+
+
+# 关闭遮罩脚本：移除配置页遮罩节点，目标网页原样保留（不导航、不刷新）
+CLOSE_OVERLAY_SCRIPT = (
+    "(function () {"
+    "  var el = document.querySelector('[data-wbd-config-overlay]');"
+    "  if (el) { el.remove(); }"
+    "})();"
+)
+
+
+def build_config_overlay_script(html_content: str) -> str:
+    """
+    生成「配置页遮罩」注入脚本：在目标网页 DOM 上挂载全屏 iframe 遮罩，
+    配置页经 iframe srcdoc 加载（与父页面同源，可经父窗口调用 js 桥）。
+    遮罩打开 / 关闭均不导航，目标网页状态完整保留。
+
+    Args:
+        html_content: 配置页完整 HTML。
+
+    Returns:
+        可交由 window.evaluate_js 执行的注入脚本字符串。
+    """
+    # JSON 序列化后的字符串可作为合法 JS 字面量嵌入（引号、换行均已转义）
+    payload = json.dumps(html_content, ensure_ascii=False)
+    return (
+        "(function () {"
+        "  'use strict';"
+        "  var existing = document.querySelector('[data-wbd-config-overlay]');"
+        "  if (existing) { existing.remove(); }"
+        "  var host = document.createElement('div');"
+        "  host.setAttribute('data-wbd-config-overlay', '1');"
+        "  var shadow = host.attachShadow({ mode: 'open' });"
+        "  shadow.innerHTML = '<style>'"
+        "    + ':host { all: initial; }'"
+        "    + '.overlay { position: fixed; inset: 0; z-index: 2147483646; }'"
+        "    + 'iframe { width: 100%; height: 100%; border: none; display: block; background: #0f172a; }'"
+        "    + '</style>'"
+        "    + '<div class=\"overlay\"><iframe title=\"应用配置\"></iframe></div>';"
+        "  (document.body || document.documentElement).appendChild(host);"
+        "  var frame = shadow.querySelector('iframe');"
+        "  frame.srcdoc = " + payload + ";"
+        "})();"
     )

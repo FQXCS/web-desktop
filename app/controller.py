@@ -8,7 +8,14 @@ import threading
 import time
 
 from app.config import build_config_from_form, get_config_path, load_config, write_config
-from app.pages import build_config_page, build_error_page, build_wait_page
+from app.context_menu import CONTEXT_MENU_SCRIPT
+from app.pages import (
+    CLOSE_OVERLAY_SCRIPT,
+    build_config_overlay_script,
+    build_config_page,
+    build_error_page,
+    build_wait_page,
+)
 from app.service import WebServiceError, WebServiceManager
 
 
@@ -30,6 +37,12 @@ class AppController:
         self._lock = threading.Lock()
         # 窗口关闭时置位，用于通知等待循环及时退出
         self.stop_event = threading.Event()
+        # 是否已跳转到目标网页（仅在目标网页注入自定义右键菜单）
+        self._target_loaded = False
+        # 配置页来源：None（首次启动）/ "web"（右键菜单）/ "error"（错误页）
+        self._config_page_source = None
+        # 最近一次错误页 HTML 缓存（配置页关闭时返回错误页用）
+        self._last_error_html = None
 
     def set_window(self, window) -> None:
         """
@@ -41,6 +54,8 @@ class AppController:
         self._window = window
         # 窗口关闭 → 置位停止事件，等待循环随即退出
         window.events.closed += self.stop_event.set
+        # 每次导航完成（含刷新、返回目标网页）→ 尝试注入右键菜单
+        window.events.loaded += self._on_page_loaded
 
     def start(self) -> None:
         """启动流程（首次启动与错误页「重试」共用）；配置模式下不启动服务。"""
@@ -63,6 +78,7 @@ class AppController:
         with self._lock:
             self._service = service
         # 切换回等待页，并启动后台就绪检查线程
+        self._target_loaded = False
         self._window.load_html(build_wait_page(self._config["web_url"]))
         threading.Thread(target=self._wait_loop, args=(service,), daemon=True).start()
 
@@ -112,12 +128,54 @@ class AppController:
             logging.exception("拉起新进程失败")
         self._window.destroy()
 
-    def open_config_page(self) -> None:
-        """错误页「打开配置」按钮回调：停止当前服务并展示配置页面。"""
-        logging.info("用户打开配置页面")
-        self._stop_current_service()
+    def open_config_page(self, source: str = "web") -> None:
+        """
+        打开配置页面。
+
+        Args:
+            source: 打开来源。"error" 表示从错误页进入（先停止残留服务，
+                关闭配置页后返回错误页）；"web" 表示从目标网页右键菜单进入，
+                以全屏遮罩覆盖在目标网页上（不导航、不刷新，服务保持运行）。
+        """
+        logging.info("用户打开配置页面（来源：%s）", source)
+        if source == "error":
+            # 错误页进入：清理可能残留的服务进程（与历史行为一致），整页切换到配置页
+            self._stop_current_service()
+            self._config_page_source = source
+            self._target_loaded = False
+            self._config = load_config()
+            self._window.load_html(build_config_page(self._config, show_close=True))
+            return
+        # 目标网页进入：注入遮罩 iframe，目标网页状态完整保留
+        self._config_page_source = source
         self._config = load_config()
-        self._window.load_html(build_config_page(self._config))
+        overlay_html = build_config_page(self._config, show_close=True)
+        try:
+            self._window.evaluate_js(build_config_overlay_script(overlay_html))
+        except Exception:
+            # 注入失败时退化为整页打开配置页
+            logging.exception("注入配置页遮罩失败，改为整页打开")
+            self._target_loaded = False
+            self._window.load_html(overlay_html)
+
+    def exit_config_page(self) -> None:
+        """配置页右上角「✕」按钮回调：关闭配置页，按来源返回对应页面。"""
+        source = self._config_page_source
+        logging.info("用户关闭配置页，返回来源：%s", source)
+        self._config_page_source = None
+        if source == "web":
+            # 移除遮罩即可，目标网页原样保留（不导航、不刷新，右键菜单仍然有效）
+            try:
+                self._window.evaluate_js(CLOSE_OVERLAY_SCRIPT)
+            except Exception:
+                logging.exception("移除配置页遮罩失败")
+        else:
+            # 返回错误页（缓存快照）；无缓存时防御性回到等待页
+            self._target_loaded = False
+            if self._last_error_html:
+                self._window.load_html(self._last_error_html)
+            else:
+                self._window.load_html(build_wait_page(self._config["web_url"]))
 
     def stop(self) -> None:
         """清理资源：停止后台服务（窗口关闭后由入口调用）。"""
@@ -145,6 +203,8 @@ class AppController:
                 return
             if service.is_ready():
                 logging.info("服务已就绪，跳转到 %s", self._config["web_url"])
+                # 跳转目标网页：loaded 事件触发时注入自定义右键菜单
+                self._target_loaded = True
                 self._window.load_url(self._config["web_url"])
                 return
             if time.monotonic() >= deadline:
@@ -165,7 +225,23 @@ class AppController:
             message: 错误说明。
         """
         log_tail = self._service.read_log_tail() if self._service else ""
-        self._window.load_html(build_error_page(title, message, log_tail))
+        error_html = build_error_page(title, message, log_tail)
+        # 缓存错误页快照：配置页「✕」关闭时返回错误页
+        self._last_error_html = error_html
+        self._target_loaded = False
+        self._window.load_html(error_html)
+
+    def _on_page_loaded(self) -> None:
+        """页面加载完成回调：已跳转到目标网页时注入自定义右键菜单脚本。"""
+        if not self._target_loaded or self._window is None:
+            return
+        try:
+            # 脚本自带幂等标记，重复注入（如整页刷新后）安全
+            self._window.evaluate_js(CONTEXT_MENU_SCRIPT)
+            logging.info("已向目标网页注入自定义右键菜单")
+        except Exception:
+            # 注入失败不影响主流程，仅记录日志
+            logging.exception("注入自定义右键菜单失败")
 
     def _stop_current_service(self) -> None:
         """停止当前持有的服务管理器（幂等，可重复调用）。"""
