@@ -99,6 +99,9 @@ powershell -ExecutionPolicy Bypass -File create_shortcut.ps1   # 创建桌面快
 
 打包产物：`dist\WebDesktop.exe`。配置文件无需随包分发，首次运行时自动创建。
 
+应用图标使用项目根目录的 `app.ico`：打包时嵌入 exe（文件图标、桌面快捷方式图标），
+运行时窗口标题栏与任务栏图标同样来源于它；替换图标只需替换 `app.ico` 后重新打包。
+
 ## 常见问题
 
 - **WebView2 运行时缺失**：Windows 11 已内置；Windows 10 需安装

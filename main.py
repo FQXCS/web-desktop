@@ -19,6 +19,9 @@ from app.ui import create_main_window  # noqa: E402
 
 LOG_FILE_NAME = "app.log"
 
+# 应用默认图标：根目录 app.ico（打包时由 PyInstaller 嵌入 exe）
+ICON_FILE_NAME = "app.ico"
+
 # 环境变量标记：自动重启兜底只执行一次，防止解压目录持续异常时陷入重启循环
 _RESTARTED_MARK = "WEBDESKTOP_AUTO_RESTARTED"
 
@@ -94,6 +97,27 @@ def setup_logging(config: dict) -> None:
     )
 
 
+def get_window_icon_path():
+    """
+    获取窗口图标路径（标题栏与任务栏图标）。
+
+    - 打包运行（frozen）：返回 None。此时不向 pywebview 传 icon，
+      其 Windows 后端会自动从 sys.executable（即 exe 自身）提取内嵌的
+      app.ico 图标，无需随包携带额外图标文件。
+    - 源码运行：返回项目根目录下 app.ico 的绝对路径；文件缺失时返回 None，
+      退化为系统默认图标，不影响启动。
+
+    Returns:
+        图标文件绝对路径，或 None 表示不指定。
+    """
+    if getattr(sys, "frozen", False):
+        # 打包后 exe 已内嵌 app.ico，交给 pywebview 从 exe 资源提取
+        return None
+    # 源码运行：app.ico 与 main.py 同位于项目根目录
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ICON_FILE_NAME)
+    return icon_path if os.path.isfile(icon_path) else None
+
+
 def main() -> int:
     """
     程序入口：加载配置 → 配置缺失或参数为空时进入配置页面，否则启动服务等待流程 → 窗口关闭后清理。
@@ -116,8 +140,15 @@ def main() -> int:
         else:
             create_main_window(controller, config, build_wait_page(config["web_url"]))
 
+        # 窗口图标：打包后从 exe 内嵌资源提取 app.ico，源码运行用根目录 app.ico
+        window_icon = get_window_icon_path()
+        if window_icon:
+            logging.info("使用窗口图标：%s", window_icon)
+        else:
+            logging.info("窗口图标：使用 exe 内嵌图标" if getattr(sys, "frozen", False) else "未找到 app.ico，使用系统默认图标")
+
         # webview.start 会阻塞直到所有窗口关闭；controller.start 在其子线程中执行
-        webview.start(controller.start, debug=False)
+        webview.start(controller.start, debug=False, icon=window_icon)
         # 窗口已关闭：停止后台服务进程
         controller.stop()
         logging.info("程序退出")

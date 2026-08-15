@@ -31,13 +31,21 @@ if (Test-Path $siteDir) {
     Write-Host "检测到本地依赖目录：$siteDir"
 }
 
+# 应用默认图标：根目录 app.ico（打包嵌入 exe，同时作为运行时窗口/任务栏图标来源）
+$iconFile = Join-Path $PSScriptRoot 'app.ico'
+if (-not (Test-Path $iconFile)) {
+    Write-Error "未找到应用图标：$iconFile，请在项目根目录放置 app.ico 后重试。"
+    exit 1
+}
+
 # 清理旧的打包产物
 if (Test-Path 'build') { Remove-Item -Recurse -Force 'build' }
 if (Test-Path 'dist') { Remove-Item -Recurse -Force 'dist' }
 
-# PyInstaller 打包：单文件、无控制台窗口、收集 webview 相关模块
+# PyInstaller 打包：单文件、无控制台窗口、收集 webview 相关模块，使用 app.ico 作为 exe 图标
 python -m PyInstaller --noconfirm --clean --onefile --windowed `
     --name WebDesktop `
+    --icon $iconFile `
     --collect-all webview `
     --hidden-import bottle `
     --hidden-import proxy_tools `

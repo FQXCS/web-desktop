@@ -24,6 +24,8 @@ $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $ExePath
 # 工作目录设为 exe 所在目录（配置文件位于用户主目录 ~/.WebDesktop 下，与工作目录无关）
 $shortcut.WorkingDirectory = Split-Path -Parent $ExePath
+# 快捷方式图标：显式使用 exe 第 0 号内嵌图标（打包时嵌入的 app.ico）
+$shortcut.IconLocation = "$ExePath,0"
 $shortcut.Description = 'Web 桌面启动器'
 $shortcut.Save()
 
