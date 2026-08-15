@@ -120,8 +120,13 @@ class AppController:
             # 源码运行：用解释器重新执行入口脚本
             command = [sys.executable, os.path.abspath(sys.argv[0])] + sys.argv[1:]
         try:
+            # PyInstaller onefile 通过 _PYI_* 环境变量让子进程复用父进程的解压目录，
+            # 若原样继承，新旧实例会共享同一目录，旧实例退出清理时会删除新实例
+            # 正在使用的文件（表现为随机报错 Cannot find win-arm64）。
+            # 因此拉起新进程时剥离全部 _PYI_* 变量，让新实例独立解压、互不影响。
+            env = {key: value for key, value in os.environ.items() if not key.startswith("_PYI_")}
             # CREATE_NEW_PROCESS_GROUP：新进程独立于当前进程组，不受本进程退出影响
-            subprocess.Popen(command, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+            subprocess.Popen(command, env=env, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
             logging.info("已拉起新进程：%s", " ".join(command))
         except Exception:
             # 拉起新进程失败时配置已保存，记录日志并继续关闭窗口（用户可手动重启）

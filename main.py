@@ -2,6 +2,7 @@
 
 import logging
 import os
+import subprocess
 import sys
 
 # 开发模式：优先从工作区 .site 目录加载第三方依赖（沙箱环境下系统 site-packages 不可写）
@@ -18,6 +19,9 @@ from app.ui import create_main_window  # noqa: E402
 
 LOG_FILE_NAME = "app.log"
 
+# 环境变量标记：自动重启兜底只执行一次，防止解压目录持续异常时陷入重启循环
+_RESTARTED_MARK = "WEBDESKTOP_AUTO_RESTARTED"
+
 
 def show_fatal_error(message: str) -> None:
     """
@@ -33,6 +37,46 @@ def show_fatal_error(message: str) -> None:
     except Exception:
         # 弹窗失败时退化为日志输出
         logging.critical(message)
+
+
+def try_auto_restart(exc: Exception) -> bool:
+    """
+    解压目录被意外破坏时的兜底：以干净环境自动重启一次，避免弹出「启动失败」。
+
+    打包后的单文件程序依赖 PyInstaller 解压目录，极端情况下该目录中的文件
+    可能被外部进程删除（典型报错：Cannot find win-arm64）。此时以剥离
+    _PYI_* 环境变量的方式重启，新进程会独立解压，通常即可恢复。
+
+    Args:
+        exc: main 捕获到的未预期异常。
+
+    Returns:
+        已自动重启返回 True（调用方直接退出，不再弹错误框）。
+    """
+    if not getattr(sys, "frozen", False):
+        # 源码模式无解压目录，无需兜底
+        return False
+    if not isinstance(exc, FileNotFoundError) or "Cannot find" not in str(exc):
+        # 仅针对解压目录文件缺失类异常兜底，其余异常仍正常提示
+        return False
+    if os.environ.get(_RESTARTED_MARK):
+        # 已自动重启过一次仍失败：不再循环，让错误正常弹出
+        return False
+    try:
+        # 剥离 PyInstaller 父子进程共享解压目录的环境变量，确保独立解压
+        env = {key: value for key, value in os.environ.items() if not key.startswith("_PYI_")}
+        env[_RESTARTED_MARK] = "1"
+        subprocess.Popen(
+            [sys.executable] + sys.argv[1:],
+            env=env,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+        logging.warning("解压目录异常（%s），已自动重启应用", exc)
+        return True
+    except Exception:
+        # 自动重启失败：退化为弹窗提示
+        logging.exception("自动重启失败")
+        return False
 
 
 def setup_logging(config: dict) -> None:
@@ -80,6 +124,8 @@ def main() -> int:
         return 0
     except Exception as exc:  # 兜底捕获未预期异常
         logging.exception("程序运行发生未预期异常")
+        if try_auto_restart(exc):
+            return 1
         show_fatal_error(f"程序启动失败：{exc}")
         return 1
 
