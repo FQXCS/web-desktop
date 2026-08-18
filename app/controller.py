@@ -7,7 +7,13 @@ import sys
 import threading
 import time
 
-from app.config import build_config_from_form, get_config_path, load_config, write_config
+from app.config import (
+    CLOSE_ACTION_MINIMIZE_TO_TRAY,
+    build_config_from_form,
+    get_config_path,
+    load_config,
+    write_config,
+)
 from app.context_menu import CONTEXT_MENU_SCRIPT
 from app.pages import (
     CLOSE_OVERLAY_SCRIPT,
@@ -43,6 +49,8 @@ class AppController:
         self._config_page_source = None
         # 最近一次错误页 HTML 缓存（配置页关闭时返回错误页用）
         self._last_error_html = None
+        # 强制退出标志：托盘「退出程序」等主动退出时置位，放行窗口关闭
+        self._force_exit = False
 
     def set_window(self, window) -> None:
         """
@@ -56,6 +64,52 @@ class AppController:
         window.events.closed += self.stop_event.set
         # 每次导航完成（含刷新、返回目标网页）→ 尝试注入右键菜单
         window.events.loaded += self._on_page_loaded
+        # 窗口关闭前 → 按「关闭窗口动作」配置决定取消关闭（最小化到托盘）或放行
+        window.events.closing += self._on_window_closing
+
+    def _on_window_closing(self):
+        """
+        窗口关闭前回调：关闭动作为「最小化到系统托盘」且非强制退出时，
+        取消关闭并隐藏窗口（程序与后台服务继续运行，可从托盘恢复或退出）。
+
+        Returns:
+            False 表示取消窗口关闭；None 表示放行（正常退出）。
+        """
+        if self._force_exit:
+            # 托盘「退出程序」等主动退出路径：放行关闭
+            return None
+        if self._config.get("close_action") == CLOSE_ACTION_MINIMIZE_TO_TRAY:
+            try:
+                # 隐藏窗口：任务栏按钮消失，程序驻留系统托盘
+                self._window.hide()
+            except Exception:
+                # 隐藏失败（窗口可能已销毁）时记录日志，仍取消关闭以免误退
+                logging.exception("隐藏窗口到系统托盘失败")
+            logging.info("关闭窗口动作：最小化到系统托盘，程序继续在后台运行")
+            return False
+        return None
+
+    def show_window(self) -> None:
+        """托盘「打开主窗口」回调：恢复最小化状态并显示、激活主窗口。"""
+        window = self._window
+        if window is None:
+            # 窗口尚未创建（如启动瞬间点击托盘）：忽略本次回调
+            return
+        try:
+            # 先恢复最小化状态，再显示并激活（restore/show 均线程安全）
+            window.restore()
+            window.show()
+            logging.info("从系统托盘恢复主窗口")
+        except Exception:
+            # 窗口已销毁等异常不影响托盘消息循环
+            logging.exception("从系统托盘恢复主窗口失败")
+
+    def exit_app(self) -> None:
+        """错误页 / 配置页「退出」按钮及托盘「退出程序」回调：关闭窗口退出程序。"""
+        logging.info("用户点击退出，关闭窗口")
+        # 置位强制退出标志：放行 closing 拦截，确保窗口真正关闭
+        self._force_exit = True
+        self._window.destroy()
 
     def start(self) -> None:
         """启动流程（首次启动与错误页「重试」共用）；配置模式下不启动服务。"""
@@ -86,11 +140,6 @@ class AppController:
         """错误页「重试」按钮回调（由页面 JS 经 js_api 调用）。"""
         logging.info("用户点击重试，重新启动服务")
         self.start()
-
-    def exit_app(self) -> None:
-        """错误页 / 配置页「退出」按钮回调（由页面 JS 经 js_api 调用）。"""
-        logging.info("用户点击退出，关闭窗口")
-        self._window.destroy()
 
     def save_config(self, data: dict) -> dict:
         """
@@ -131,6 +180,8 @@ class AppController:
         except Exception:
             # 拉起新进程失败时配置已保存，记录日志并继续关闭窗口（用户可手动重启）
             logging.exception("拉起新进程失败")
+        # 置位强制退出标志：放行 closing 拦截，确保旧实例窗口真正关闭
+        self._force_exit = True
         self._window.destroy()
 
     def open_config_page(self, source: str = "web") -> None:

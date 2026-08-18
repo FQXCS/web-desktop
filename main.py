@@ -15,6 +15,7 @@ import webview  # noqa: E402
 from app.config import get_config_dir, get_config_issues, load_config  # noqa: E402
 from app.controller import AppController  # noqa: E402
 from app.pages import build_config_page, build_wait_page  # noqa: E402
+from app.tray import SystemTray  # noqa: E402
 from app.ui import create_main_window  # noqa: E402
 
 LOG_FILE_NAME = "app.log"
@@ -147,10 +148,23 @@ def main() -> int:
         else:
             logging.info("窗口图标：使用 exe 内嵌图标" if getattr(sys, "frozen", False) else "未找到 app.ico，使用系统默认图标")
 
-        # webview.start 会阻塞直到所有窗口关闭；controller.start 在其子线程中执行
-        webview.start(controller.start, debug=False, icon=window_icon)
-        # 窗口已关闭：停止后台服务进程
-        controller.stop()
+        # 系统托盘：应用启动后常驻右下角（独立线程，不阻塞主流程）。
+        # 左键单击图标打开主窗口；右键菜单可打开主窗口或退出程序。
+        tray = SystemTray(
+            title=config.get("window_title", "Web 桌面启动器"),
+            icon_path=window_icon or "",
+            on_open=controller.show_window,
+            on_quit=controller.exit_app,
+        )
+        tray.start()
+
+        try:
+            # webview.start 会阻塞直到所有窗口关闭；controller.start 在其子线程中执行
+            webview.start(controller.start, debug=False, icon=window_icon)
+        finally:
+            # 窗口已关闭：停止后台服务进程，并移除托盘图标
+            controller.stop()
+            tray.stop()
         logging.info("程序退出")
         return 0
     except Exception as exc:  # 兜底捕获未预期异常

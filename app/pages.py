@@ -49,7 +49,7 @@ WAIT_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     <div class="sub">服务就绪后将自动打开页面</div>
     <div class="timer">已等待 <span id="sec">0</span> 秒</div>
     <div class="url">$TARGET_URL</div>
-    <div class="hint">如果长时间无响应，请检查启动命令与服务地址配置<br>关闭窗口将自动停止后台服务</div>
+    <div class="hint">如果长时间无响应，请检查启动命令与服务地址配置<br>关闭窗口将按配置最小化到系统托盘或退出程序</div>
   </div>
   <script>
     // 页面加载时刻作为计时起点
@@ -173,6 +173,10 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
   .check-field { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
   .check-field input { width: 16px; height: 16px; accent-color: #38bdf8; cursor: pointer; }
   .check-field label { margin: 0; font-size: 13px; color: #cbd5e1; cursor: pointer; }
+  .radio-row { display: flex; gap: 22px; }
+  .radio-field { display: flex; align-items: center; gap: 8px; }
+  .radio-field input { width: 16px; height: 16px; accent-color: #38bdf8; cursor: pointer; }
+  .radio-field label { margin: 0; font-size: 13px; color: #cbd5e1; cursor: pointer; }
   .actions { margin-top: 28px; display: flex; justify-content: center; gap: 14px; }
   .btn {
     min-width: 120px; padding: 10px 22px; border: none; border-radius: 8px;
@@ -254,7 +258,21 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
         </div>
         <div class="check-field">
           <input type="checkbox" id="kill_on_exit">
-          <label for="kill_on_exit">关闭窗口时终止服务进程（kill_on_exit）</label>
+          <label for="kill_on_exit">退出程序时终止服务进程（kill_on_exit）</label>
+        </div>
+        <div class="field">
+          <label>关闭窗口时（close_action）<span class="req">*</span></label>
+          <div class="radio-row">
+            <label class="radio-field">
+              <input type="radio" name="close_action" value="minimize_to_tray">
+              <span>最小化到系统托盘</span>
+            </label>
+            <label class="radio-field">
+              <input type="radio" name="close_action" value="exit">
+              <span>退出程序</span>
+            </label>
+          </div>
+          <div class="help">关闭主窗口后的行为：「最小化到系统托盘」时程序与后台服务继续运行，可从托盘图标恢复或退出；「退出程序」时关闭窗口即结束进程。</div>
         </div>
       </details>
       <div class="actions">
@@ -359,6 +377,12 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     setValue('window_height', size[1]);
     document.getElementById('show_console').checked = !!CONFIG.show_console;
     document.getElementById('kill_on_exit').checked = !!CONFIG.kill_on_exit;
+    // 回填「关闭窗口时」单选：未知值按默认「最小化到系统托盘」处理
+    var closeAction = (CONFIG.close_action === 'exit') ? 'exit' : 'minimize_to_tray';
+    var closeRadios = document.querySelectorAll('input[name="close_action"]');
+    for (var i = 0; i < closeRadios.length; i++) {
+      closeRadios[i].checked = (closeRadios[i].value === closeAction);
+    }
 
     document.getElementById('config-form').addEventListener('submit', function (event) {
       event.preventDefault();
@@ -386,6 +410,7 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
         ],
         show_console: document.getElementById('show_console').checked,
         kill_on_exit: document.getElementById('kill_on_exit').checked,
+        close_action: document.querySelector('input[name="close_action"]:checked').value,
         log_dir: document.getElementById('log_dir').value
       };
 

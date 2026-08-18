@@ -11,6 +11,12 @@ from app.paths import expand_home_path, get_home_dir
 CONFIG_DIR_NAME = ".WebDesktop"
 CONFIG_FILE_NAME = "config.json"
 
+# 关闭窗口动作的可选值：最小化到系统托盘 / 退出程序
+CLOSE_ACTION_MINIMIZE_TO_TRAY = "minimize_to_tray"
+CLOSE_ACTION_EXIT = "exit"
+# 关闭窗口动作的默认值（首次运行时生效）：最小化到系统托盘
+DEFAULT_CLOSE_ACTION = CLOSE_ACTION_MINIMIZE_TO_TRAY
+
 # 默认配置：除 web_command / web_url 外所有参数均有默认值；
 # web_command 与 web_url 为必填项但无默认值，留空时程序进入配置页面引导用户填写
 DEFAULT_CONFIG = {
@@ -32,8 +38,10 @@ DEFAULT_CONFIG = {
     "window_size": [1200, 800],
     # 是否显示服务控制台窗口（调试用）
     "show_console": False,
-    # 关闭窗口时是否终止服务进程
+    # 退出程序时是否终止服务进程（最小化到系统托盘期间服务不受影响）
     "kill_on_exit": True,
+    # 关闭窗口动作：minimize_to_tray 最小化到系统托盘 / exit 退出程序
+    "close_action": DEFAULT_CLOSE_ACTION,
     # 日志目录：默认 ~/.WebDesktop/log
     "log_dir": "~/.WebDesktop/log",
 }
@@ -154,6 +162,10 @@ def get_config_issues(config: dict) -> list:
         if not isinstance(config.get(key), bool):
             issues.append(f"{key} 必须是布尔值（true/false）")
 
+    close_action = config.get("close_action")
+    if close_action not in (CLOSE_ACTION_MINIMIZE_TO_TRAY, CLOSE_ACTION_EXIT):
+        issues.append(f"close_action（关闭窗口动作）必须是 {CLOSE_ACTION_MINIMIZE_TO_TRAY} 或 {CLOSE_ACTION_EXIT}")
+
     return issues
 
 
@@ -221,6 +233,12 @@ def build_config_from_form(data: dict):
         if boolean is None:
             return {}, f"{key} 必须是布尔值（true/false）"
         config[key] = boolean
+
+    # 关闭窗口动作：单选枚举值
+    close_action = data.get("close_action")
+    if close_action not in (CLOSE_ACTION_MINIMIZE_TO_TRAY, CLOSE_ACTION_EXIT):
+        return {}, f"close_action（关闭窗口动作）必须是 {CLOSE_ACTION_MINIMIZE_TO_TRAY} 或 {CLOSE_ACTION_EXIT}"
+    config["close_action"] = close_action
 
     return config, ""
 
