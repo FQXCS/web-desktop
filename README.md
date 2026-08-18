@@ -120,3 +120,7 @@ powershell -ExecutionPolicy Bypass -File create_shortcut.ps1   # 创建桌面快
   `web_service.log`（服务日志），可通过 `log_dir` 修改。
 - **如何恢复默认配置**：退出程序后删除 `~/.WebDesktop/config.json`，
   下次启动会自动重建并进入配置页面。
+
+## DeepSeek Harness 鲸鱼娘图标
+
+- https://github.com/fornarwhal/deepseek-whale-girl-icon
