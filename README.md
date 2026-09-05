@@ -125,3 +125,7 @@ powershell -ExecutionPolicy Bypass -File create_shortcut.ps1   # 创建桌面快
   同时确保从日志提取访问地址（`url_source=log`）只会命中本次启动打印的地址。
 - **如何恢复默认配置**：退出程序后删除 `~/.WebDesktop/config.json`，
   下次启动会自动重建并进入配置页面。
+
+## DeepSeek Harness 鲸鱼娘图标
+
+- https://github.com/fornarwhal/deepseek-whale-girl-icon
