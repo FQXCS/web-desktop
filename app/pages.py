@@ -162,6 +162,7 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
   }
   input:focus { border-color: #38bdf8; }
   .help { margin-top: 6px; font-size: 12px; color: #64748b; line-height: 1.7; }
+  .help code { font-family: Consolas, monospace; color: #38bdf8; background: rgba(56, 189, 248, 0.08); padding: 1px 5px; border-radius: 4px; }
   details {
     margin-top: 8px; border: 1px solid #334155; border-radius: 10px;
     padding: 2px 18px 6px; background: #172033;
@@ -209,6 +210,25 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
         <label for="web_url">服务地址（web_url）<span class="req">*</span></label>
         <input type="url" id="web_url" required pattern="https?://.*" placeholder="例如：http://127.0.0.1:3080">
         <div class="help">服务就绪后跳转的地址，也是健康检查地址；必须以 http:// 或 https:// 开头。</div>
+      </div>
+      <div class="field">
+        <label>访问地址来源（url_source）<span class="req">*</span></label>
+        <div class="radio-row">
+          <label class="radio-field">
+            <input type="radio" name="url_source" value="fixed">
+            <span>固定地址</span>
+          </label>
+          <label class="radio-field">
+            <input type="radio" name="url_source" value="log">
+            <span>从服务日志提取</span>
+          </label>
+        </div>
+        <div class="help">「固定地址」直接打开上面的 web_url；「从服务日志提取」会在服务就绪后用下方正则从服务日志里匹配真实访问地址（适合会打印带令牌/动态端口 URL 的服务，如 dsh web）。</div>
+      </div>
+      <div class="field">
+        <label for="url_log_regex">日志提取正则（url_log_regex）</label>
+        <input type="text" id="url_log_regex" placeholder="(https?://\\S+)">
+        <div class="help">从服务日志匹配访问地址的正则；取第一个匹配结果，若正则含捕获组则取第 1 个捕获组。示例（dsh web）：<code>dsh web: (https?://\\S+)</code></div>
       </div>
       <details id="advanced">
         <summary>高级设置</summary>
@@ -366,6 +386,25 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
     // 回填当前配置
     setValue('web_command', CONFIG.web_command);
     setValue('web_url', CONFIG.web_url);
+    setValue('url_log_regex', CONFIG.url_log_regex);
+    // 回填「访问地址来源」单选：未知值按默认「固定地址」处理
+    var urlSource = (CONFIG.url_source === 'log') ? 'log' : 'fixed';
+    var urlSourceRadios = document.querySelectorAll('input[name="url_source"]');
+    for (var i = 0; i < urlSourceRadios.length; i++) {
+      urlSourceRadios[i].checked = (urlSourceRadios[i].value === urlSource);
+    }
+
+    // 「从服务日志提取」为选中时，日志提取正则才必填
+    function syncUrlRegexRequired() {
+      var checked = document.querySelector('input[name="url_source"]:checked');
+      var isLog = checked && checked.value === 'log';
+      document.getElementById('url_log_regex').required = isLog;
+    }
+    for (var j = 0; j < urlSourceRadios.length; j++) {
+      urlSourceRadios[j].addEventListener('change', syncUrlRegexRequired);
+    }
+    syncUrlRegexRequired();
+
     setValue('working_dir', CONFIG.working_dir);
     setValue('log_dir', CONFIG.log_dir);
     setValue('startup_timeout', CONFIG.startup_timeout);
@@ -399,6 +438,8 @@ CONFIG_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
       var payload = {
         web_command: document.getElementById('web_command').value,
         web_url: document.getElementById('web_url').value,
+        url_source: document.querySelector('input[name="url_source"]:checked').value,
+        url_log_regex: document.getElementById('url_log_regex').value,
         working_dir: document.getElementById('working_dir').value,
         startup_timeout: document.getElementById('startup_timeout').value,
         check_interval: document.getElementById('check_interval').value,

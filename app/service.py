@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -101,13 +102,16 @@ class WebServiceManager:
                 "配置项 web_command（服务启动命令）为空，请检查 config.json 配置"
             )
 
-        # 准备日志文件（服务 stdout/stderr 均写入该文件，便于排查启动失败原因）
+        # 准备日志文件（服务 stdout/stderr 均写入该文件，便于排查启动失败原因）。
+        # 每次服务启动都重新打开并以「写入（截断）」模式清空历史日志，避免文件无限累积；
+        # 同时保证从日志中提取访问地址（find_log_url）只会匹配到本次启动的地址，
+        # 而不会命中上一轮已失效的地址（如旧的 dsh web 一次性 token）。
         # log_dir 默认 ~/.WebDesktop/log（配置加载时已转为绝对路径），此处兜底展开 ~ 并回退
         log_dir = self._config.get("log_dir") or os.path.join(get_app_dir(), "log")
         log_dir = expand_home_path(log_dir)
         os.makedirs(log_dir, exist_ok=True)
         self._log_path = os.path.join(log_dir, "web_service.log")
-        self._log_file = open(self._log_path, "ab")
+        self._log_file = open(self._log_path, "wb")
 
         # Windows 下创建独立进程组，配合 taskkill /T 可清理整个进程树；
         # 默认隐藏子进程的控制台窗口（show_console 为 true 时显示，便于调试）
@@ -205,6 +209,46 @@ class WebServiceManager:
         except OSError as exc:
             logging.warning("读取服务日志失败：%s", exc)
             return ""
+
+    def find_log_url(self, pattern: str, scan_window_bytes: int = 256 * 1024):
+        """
+        从服务日志中按正则提取一个访问地址（用于 url_source 为 log 时的跳转）。
+
+        取第一个匹配结果：若正则含捕获组，则返回第 1 个捕获组的内容（无匹配组时返回 0 组，
+        即整段匹配）；找不到匹配、正则非法或读取失败时返回 None。读取最近的一段日志
+        （scan_window_bytes 字节），避免大日志拖慢界面。
+
+        Args:
+            pattern: 用于匹配访问地址的正则表达式。
+            scan_window_bytes: 最多扫描的日志末尾字节数。
+
+        Returns:
+            提取出的访问地址字符串；未找到或异常时返回 None。
+        """
+        if not isinstance(pattern, str) or not pattern.strip():
+            return None
+        if not self._log_path or not os.path.exists(self._log_path):
+            return None
+        try:
+            with open(self._log_path, "rb") as file:
+                file.seek(0, os.SEEK_END)
+                file_size = file.tell()
+                file.seek(max(0, file_size - scan_window_bytes))
+                data = file.read().decode("utf-8", errors="replace")
+            try:
+                match = re.search(pattern, data)
+            except re.error:
+                logging.warning("服务日志正则非法，无法提取访问地址：%s", pattern)
+                return None
+            if match is None:
+                return None
+            # 优先取第 1 个捕获组；无捕获组时取整段匹配
+            value = match.group(1) if match.groups() else match.group(0)
+            url = value.strip() if isinstance(value, str) else ""
+            return url or None
+        except OSError as exc:
+            logging.warning("读取服务日志失败：%s", exc)
+            return None
 
     def stop(self, timeout: int = 10) -> None:
         """

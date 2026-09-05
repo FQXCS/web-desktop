@@ -242,11 +242,17 @@ class AppController:
         后台就绪检查循环：轮询服务健康状态，就绪后跳转目标地址；
         进程退出或超时则展示错误页；窗口关闭时立即退出。
 
+        `url_source` 为 log 时，就绪信号是服务日志中按 `url_log_regex`
+        匹配到访问地址（且 http 检查通过），并用该地址跳转；
+        否则沿用固定地址 web_url 跳转。
+
         Args:
             service: 本次启动的服务管理器实例。
         """
         timeout = self._config.get("startup_timeout", 60)
         interval = self._config.get("check_interval", 0.5)
+        url_source = self._config.get("url_source", "fixed")
+        url_regex = self._config.get("url_log_regex", "")
         deadline = time.monotonic() + timeout
 
         while not self.stop_event.is_set():
@@ -257,18 +263,34 @@ class AppController:
                     f"服务进程已退出（退出码：{service.exit_code()}），请检查服务日志。",
                 )
                 return
-            if service.is_ready():
+            if url_source == "log":
+                # 从日志提取访问地址：正则匹配到且服务已可响应（http 已就绪）时才跳转
+                matched_url = service.find_log_url(url_regex)
+                if matched_url and service.is_ready():
+                    logging.info("已从服务日志提取访问地址：%s", matched_url)
+                    # 跳转目标网页：loaded 事件触发时注入自定义右键菜单
+                    self._target_loaded = True
+                    self._window.load_url(matched_url)
+                    return
+            elif service.is_ready():
                 logging.info("服务已就绪，跳转到 %s", self._config["web_url"])
                 # 跳转目标网页：loaded 事件触发时注入自定义右键菜单
                 self._target_loaded = True
                 self._window.load_url(self._config["web_url"])
                 return
             if time.monotonic() >= deadline:
-                self._show_error(
-                    "服务启动超时",
-                    f"等待 {timeout} 秒后服务仍未就绪。\n"
-                    "请检查 web_command 是否正确、web_url 是否与服务的实际端口一致。",
-                )
+                if url_source == "log":
+                    self._show_error(
+                        "服务启动失败",
+                        f"等待 {timeout:.0f} 秒后仍未从服务日志中提取到访问地址。\n"
+                        "请检查 url_log_regex（日志提取正则）是否正确，或查看下方服务日志末尾内容以确认服务打印的地址格式。",
+                    )
+                else:
+                    self._show_error(
+                        "服务启动超时",
+                        f"等待 {timeout} 秒后服务仍未就绪。\n"
+                        "请检查 web_command 是否正确、web_url 是否与服务的实际端口一致。",
+                    )
                 return
             time.sleep(interval)
 

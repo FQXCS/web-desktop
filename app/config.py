@@ -4,6 +4,7 @@ import copy
 import json
 import logging
 import os
+import re
 
 from app.paths import expand_home_path, get_home_dir
 
@@ -24,6 +25,10 @@ DEFAULT_CONFIG = {
     "web_command": "",
     # 服务地址：服务就绪后跳转的地址（必填，无默认值）
     "web_url": "",
+    # 访问地址来源：fixed=直接使用 web_url 固定地址 / log=服务就绪后用正则从服务日志提取
+    "url_source": "fixed",
+    # 从服务日志提取访问地址的正则（url_source 为 log 时生效）
+    "url_log_regex": r"(https?://\S+)",
     # 服务工作目录：默认 ~/.WebDesktop/working
     "working_dir": "~/.WebDesktop/working",
     # 等待服务就绪的超时秒数
@@ -50,6 +55,8 @@ DEFAULT_CONFIG = {
 _CONFIG_LABELS = {
     "web_command": "服务启动命令",
     "web_url": "服务地址",
+    "url_source": "访问地址来源",
+    "url_log_regex": "日志提取正则",
     "working_dir": "工作目录",
     "log_dir": "日志目录",
     "window_title": "窗口标题",
@@ -132,6 +139,17 @@ def get_config_issues(config: dict) -> list:
     elif not url.startswith(("http://", "https://")):
         issues.append(f"{_CONFIG_LABELS['web_url']}（web_url）必须以 http:// 或 https:// 开头")
 
+    url_source = config.get("url_source")
+    if url_source not in ("fixed", "log"):
+        issues.append(f"{_CONFIG_LABELS['url_source']}（url_source）必须是 fixed（固定地址）或 log（从日志提取）")
+
+    url_regex = config.get("url_log_regex")
+    if url_source == "log":
+        if not isinstance(url_regex, str) or not url_regex.strip():
+            issues.append(f"{_CONFIG_LABELS['url_log_regex']}（url_log_regex）不能为空")
+        elif not _is_valid_regex(url_regex):
+            issues.append(f"{_CONFIG_LABELS['url_log_regex']}（url_log_regex）不是合法的正则表达式")
+
     for key in ("working_dir", "log_dir"):
         value = config.get(key)
         if not isinstance(value, str) or not value.strip():
@@ -197,6 +215,21 @@ def build_config_from_form(data: dict):
     if not url.startswith(("http://", "https://")):
         return {}, f"{_CONFIG_LABELS['web_url']}（web_url）必须以 http:// 或 https:// 开头"
     config["web_url"] = url
+
+    # 访问地址来源：fixed=固定地址 / log=从服务日志用正则提取
+    url_source = data.get("url_source")
+    if url_source not in ("fixed", "log"):
+        return {}, f"{_CONFIG_LABELS['url_source']}（url_source）必须是 fixed（固定地址）或 log（从日志提取）"
+    config["url_source"] = url_source
+
+    # 日志提取正则：仅 url_source 为 log 时必填且需是合法正则
+    url_regex = _text(data, "url_log_regex")
+    if url_source == "log":
+        if not url_regex:
+            return {}, f"{_CONFIG_LABELS['url_log_regex']}（url_log_regex）不能为空"
+        if not _is_valid_regex(url_regex):
+            return {}, f"{_CONFIG_LABELS['url_log_regex']}（url_log_regex）不是合法的正则表达式"
+    config["url_log_regex"] = url_regex
 
     # 目录字段：必填，写入前展开 ~ 并转为绝对路径
     for key in ("working_dir", "log_dir"):
@@ -290,9 +323,12 @@ def _merge(config: dict, user_config: dict) -> None:
         if key in user_config and user_config[key] is not None:
             config[key] = user_config[key]
     # 字符串字段类型异常时置空，交由完整性检查提示用户
-    for key in ("web_command", "web_url", "working_dir", "window_title", "log_dir"):
+    for key in ("web_command", "web_url", "url_log_regex", "working_dir", "window_title", "log_dir"):
         if not isinstance(config[key], str):
             config[key] = ""
+    # url_source 类型异常时回退为默认值
+    if not isinstance(config.get("url_source"), str):
+        config["url_source"] = DEFAULT_CONFIG["url_source"]
 
 
 def _normalize_paths(config: dict) -> None:
@@ -345,3 +381,12 @@ def _parse_bool(value):
         if lowered == "false":
             return False
     return None
+
+
+def _is_valid_regex(pattern: str) -> bool:
+    """判断字符串是否为合法的正则表达式（可成功编译）。"""
+    try:
+        re.compile(pattern)
+        return True
+    except re.error:
+        return False

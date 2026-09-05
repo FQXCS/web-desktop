@@ -54,6 +54,8 @@ web-desktop/
 | --- | --- | --- |
 | `web_command` | 服务启动命令（完整命令行字符串，含空格的路径用双引号包裹） | 无默认值，必填 |
 | `web_url` | 服务就绪后跳转的地址（也是健康检查地址） | 无默认值，必填 |
+| `url_source` | 访问地址来源：`fixed` 直接使用 `web_url` / `log` 服务就绪后用正则从日志提取 | `fixed` |
+| `url_log_regex` | `url_source` 为 `log` 时，从服务日志提取访问地址的正则（取第一个匹配，含捕获组则取第 1 组） | `(https?://\S+)` |
 | `working_dir` | 服务进程工作目录 | `~/.WebDesktop/working` |
 | `log_dir` | 日志目录（服务日志与程序日志） | `~/.WebDesktop/log` |
 | `startup_timeout` | 等待服务就绪的超时秒数 | `60` |
@@ -68,7 +70,7 @@ web-desktop/
 配置页面说明：
 
 - 首次运行（配置文件不存在）或启动时发现任意参数为空，首页即进入配置页面
-- `web_command` 与 `web_url` 直接展示；其余参数为高级设置，默认折叠
+- `web_command`、`web_url`、`url_source`（访问地址来源）与 `url_log_regex`（日志提取正则）直接展示；其余参数为高级设置，默认折叠
 - 全部参数均为必填项；除 `web_command` / `web_url` 外均有默认值
 - 点击「保存」校验通过后自动重启应用并进入正常启动流程
 - 服务启动失败时可在错误页点击「打开配置」修改配置
@@ -110,6 +112,7 @@ powershell -ExecutionPolicy Bypass -File create_shortcut.ps1   # 创建桌面快
 
 ## 常见问题
 
+- **跳转到 dsh web 类服务时报「dsh web authentication required; reopen the URL printed by dsh web」**：这类服务（`dsh --profile web`）不是裸 HTTP 服务，它需要一次「令牌换 cookie」认证——服务启动时会在日志打印一行带 `?token=...` 的地址（如 `dsh web: http://127.0.0.1:3080/?token=xxx`），浏览器访问该地址后才拿到会话 cookie。此时请把 `url_source` 设为 `log`，并把 `url_log_regex` 配置为能匹配这行地址的正则（默认 `(https?://\S+)` 即可，dsh 会打印带 token 的地址），服务就绪后会自动用日志里的真实地址跳转。同时建议给 `web_command` 加上 `--no-open`，避免 dsh 额外弹出一个系统浏览器。
 - **WebView2 运行时缺失**：Windows 11 已内置；Windows 10 需安装
   [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 - **服务启动失败**：错误页会展示服务日志末尾 30 行，可点击「打开配置」修改
@@ -118,5 +121,7 @@ powershell -ExecutionPolicy Bypass -File create_shortcut.ps1   # 创建桌面快
   响应为准，若服务不是 HTTP 协议请调整检查方式。
 - **日志位置**：默认在 `~/.WebDesktop/log\` 目录下：`app.log`（程序日志）、
   `web_service.log`（服务日志），可通过 `log_dir` 修改。
+  每次启动服务都会清空 `web_service.log` 后重新写入，避免日志无限累积，
+  同时确保从日志提取访问地址（`url_source=log`）只会命中本次启动打印的地址。
 - **如何恢复默认配置**：退出程序后删除 `~/.WebDesktop/config.json`，
   下次启动会自动重建并进入配置页面。
