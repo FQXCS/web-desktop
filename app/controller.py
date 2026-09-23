@@ -14,7 +14,6 @@ from app.config import (
     load_config,
     write_config,
 )
-from app.context_menu import CONTEXT_MENU_SCRIPT
 from app.pages import (
     CLOSE_OVERLAY_SCRIPT,
     build_config_overlay_script,
@@ -25,6 +24,11 @@ from app.pages import (
 from app.service import WebServiceError, WebServiceManager
 from app.toolbar import build_toolbar_script
 from app.ui_state import load_toolbar_pos
+from app.webview_settings import apply_kernel_preferences
+
+# 等待 WebView2 内核就绪的超时与轮询间隔（秒）：内核偏好越早设置越可靠
+KERNEL_READY_TIMEOUT = 10.0
+KERNEL_READY_POLL_INTERVAL = 0.05
 
 
 class AppController:
@@ -45,9 +49,11 @@ class AppController:
         self._lock = threading.Lock()
         # 窗口关闭时置位，用于通知等待循环及时退出
         self.stop_event = threading.Event()
-        # 是否已跳转到目标网页（仅在目标网页注入自定义右键菜单）
+        # 是否已跳转到目标网页（仅在目标网页注入可拖动齿轮按钮）
         self._target_loaded = False
-        # 配置页来源：None（首次启动）/ "web"（右键菜单）/ "error"（错误页）
+        # 内核默认能力（右键菜单、浏览器快捷键）是否已成功应用：成功一次即可
+        self._kernel_defaults_applied = False
+        # 配置页来源：None（首次启动）/ "web"（目标网页齿轮按钮）/ "error"（错误页）
         self._config_page_source = None
         # 最近一次错误页 HTML 缓存（配置页关闭时返回错误页用）
         self._last_error_html = None
@@ -64,10 +70,12 @@ class AppController:
         self._window = window
         # 窗口关闭 → 置位停止事件，等待循环随即退出
         window.events.closed += self.stop_event.set
-        # 每次导航完成（含刷新、返回目标网页）→ 尝试注入右键菜单
+        # 每次导航完成（含刷新、返回目标网页）→ 尝试注入齿轮按钮
         window.events.loaded += self._on_page_loaded
         # 窗口关闭前 → 按「关闭窗口动作」配置决定取消关闭（最小化到托盘）或放行
         window.events.closing += self._on_window_closing
+        # 内核偏好越早设置越可靠：内核就绪瞬间即应用（后台线程，不阻塞主流程）
+        threading.Thread(target=self._apply_kernel_preferences_when_ready, daemon=True).start()
 
     def _on_window_closing(self):
         """
@@ -192,7 +200,7 @@ class AppController:
 
         Args:
             source: 打开来源。"error" 表示从错误页进入（先停止残留服务，
-                关闭配置页后返回错误页）；"web" 表示从目标网页右键菜单进入，
+                关闭配置页后返回错误页）；"web" 表示从目标网页齿轮按钮进入，
                 以全屏遮罩覆盖在目标网页上（不导航、不刷新，服务保持运行）。
         """
         logging.info("用户打开配置页面（来源：%s）", source)
@@ -222,7 +230,7 @@ class AppController:
         logging.info("用户关闭配置页，返回来源：%s", source)
         self._config_page_source = None
         if source == "web":
-            # 移除遮罩即可，目标网页原样保留（不导航、不刷新，右键菜单仍然有效）
+            # 移除遮罩即可，目标网页原样保留（不导航、不刷新）
             try:
                 self._window.evaluate_js(CLOSE_OVERLAY_SCRIPT)
             except Exception:
@@ -270,13 +278,13 @@ class AppController:
                 matched_url = service.find_log_url(url_regex)
                 if matched_url and service.is_ready():
                     logging.info("已从服务日志提取访问地址：%s", matched_url)
-                    # 跳转目标网页：loaded 事件触发时注入自定义右键菜单
+                    # 跳转目标网页：loaded 事件触发时注入可拖动齿轮按钮
                     self._target_loaded = True
                     self._window.load_url(matched_url)
                     return
             elif service.is_ready():
                 logging.info("服务已就绪，跳转到 %s", self._config["web_url"])
-                # 跳转目标网页：loaded 事件触发时注入自定义右键菜单
+                # 跳转目标网页：loaded 事件触发时注入可拖动齿轮按钮
                 self._target_loaded = True
                 self._window.load_url(self._config["web_url"])
                 return
@@ -311,24 +319,47 @@ class AppController:
         self._target_loaded = False
         self._window.load_html(error_html)
 
+    def _apply_kernel_preferences_when_ready(self) -> None:
+        """
+        等待 WebView2 内核就绪后立即应用内核偏好（后台线程）。
+
+        设置越早越可靠：若等到页面加载完成后再设置，内核可能已按旧配色绘制原生 UI，
+        出现「设置成功但右键菜单仍是深色」的现象。此处轮询到内核可访问即设置，
+        超时则交由页面加载后的兜底逻辑继续尝试。
+        """
+        deadline = time.monotonic() + KERNEL_READY_TIMEOUT
+        while not self.stop_event.is_set() and time.monotonic() < deadline:
+            if self._kernel_defaults_applied:
+                return
+            if apply_kernel_preferences(self._window):
+                self._kernel_defaults_applied = True
+                logging.info("WebView2 内核偏好已应用（内核就绪后立即设置）")
+                return
+            time.sleep(KERNEL_READY_POLL_INTERVAL)
+        if not self._kernel_defaults_applied:
+            logging.warning(
+                "等待 WebView2 内核就绪超时（%.0f 秒），改由页面加载后应用内核偏好",
+                KERNEL_READY_TIMEOUT,
+            )
+
     def _on_page_loaded(self) -> None:
-        """页面加载完成回调：已跳转到目标网页时注入自定义右键菜单与可拖动齿轮按钮。"""
-        if not self._target_loaded or self._window is None:
+        """页面加载完成回调：应用内核偏好，并在目标网页注入可拖动齿轮按钮。"""
+        if self._window is None:
+            return
+        # 内核偏好（右键菜单与浏览器快捷键、浅色 UI、菜单项过滤）：pywebview 建窗时
+        # 按 debug 关闭了前两项，此处补开；与当前页面无关，全部成功应用一次即可，
+        # 失败（如内核尚未就绪）在下次加载时自动重试
+        if not self._kernel_defaults_applied:
+            self._kernel_defaults_applied = apply_kernel_preferences(self._window)
+        if not self._target_loaded:
             return
         try:
-            # 脚本自带幂等标记，重复注入（如整页刷新后）安全
-            self._window.evaluate_js(CONTEXT_MENU_SCRIPT)
-            logging.info("已向目标网页注入自定义右键菜单")
-        except Exception:
-            # 注入失败不影响主流程，仅记录日志
-            logging.exception("注入自定义右键菜单失败")
-        try:
-            # 齿轮脚本同样自带幂等标记（默认停在右下角，可拖动，单击打开配置页）；
+            # 齿轮脚本自带幂等标记（默认停在右下角，可拖动，单击打开配置页）；
             # 注入时带上 Python 侧保存的位置，页面刷新与应用重启后都能还原
             self._window.evaluate_js(build_toolbar_script(load_toolbar_pos()))
             logging.info("已向目标网页注入可拖动齿轮按钮")
         except Exception:
-            # 齿轮注入失败不影响右键菜单与主流程，仅记录日志
+            # 齿轮注入失败不影响主流程，仅记录日志
             logging.exception("注入可拖动齿轮按钮失败")
 
     def _stop_current_service(self) -> None:

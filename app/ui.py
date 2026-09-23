@@ -1,14 +1,10 @@
 """UI 层：创建 pywebview 窗口（基于系统 Edge/WebView2 内核），并向页面暴露 Python 接口。"""
 
-import ctypes
 import logging
 
 import webview
 
 from app.ui_state import load_toolbar_pos, save_toolbar_pos
-
-# Windows 剪贴板格式常量：Unicode 文本（CF_UNICODETEXT）
-CF_UNICODETEXT = 13
 
 
 class BridgeApi:
@@ -52,7 +48,7 @@ class BridgeApi:
         打开配置页面（遮罩式，右上角带关闭按钮）。
 
         Args:
-            source: 打开来源。"web" 表示从目标网页右键菜单进入（保持服务运行，
+            source: 打开来源。"web" 表示从目标网页齿轮按钮进入（保持服务运行，
                 关闭配置页后返回目标网页）；"error" 表示从错误页进入
                 （先停止残留服务，关闭配置页后返回错误页）。
         """
@@ -86,51 +82,6 @@ class BridgeApi:
         """
         return {"ok": save_toolbar_pos(left, top, view_width, view_height)}
 
-    def get_clipboard_text(self):
-        """
-        读取 Windows 剪贴板中的 Unicode 文本（供目标网页右键菜单「粘贴」使用）。
-
-        Returns:
-            剪贴板文本；剪贴板为空、被其他进程占用或非 Windows 平台时返回 None。
-        """
-        # 非 Windows 平台（如 Linux/macOS）无 windll，直接视为不可用
-        if not hasattr(ctypes, "windll"):
-            return None
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
-        # 声明参数与返回值类型，避免 64 位下句柄被截断
-        user32.OpenClipboard.argtypes = [ctypes.c_void_p]
-        user32.OpenClipboard.restype = ctypes.c_int
-        user32.GetClipboardData.argtypes = [ctypes.c_uint]
-        user32.GetClipboardData.restype = ctypes.c_void_p
-        user32.CloseClipboard.restype = ctypes.c_int
-        kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
-        kernel32.GlobalLock.restype = ctypes.c_void_p
-        kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
-        kernel32.GlobalUnlock.restype = ctypes.c_int
-        try:
-            if not user32.OpenClipboard(None):
-                # 剪贴板被其他进程占用等：视为读取失败
-                return None
-            try:
-                handle = user32.GetClipboardData(CF_UNICODETEXT)
-                if not handle:
-                    return None
-                pointer = kernel32.GlobalLock(handle)
-                if not pointer:
-                    return None
-                try:
-                    # 以 UTF-16 读取至终止符，返回 Python 字符串
-                    return ctypes.wstring_at(pointer)
-                finally:
-                    kernel32.GlobalUnlock(handle)
-            finally:
-                user32.CloseClipboard()
-        except Exception:
-            # 任何异常均退化为「不可用」，不让 js 桥调用链路报错
-            logging.exception("读取剪贴板文本失败")
-            return None
-
 
 def create_main_window(controller, config: dict, html: str):
     """
@@ -152,7 +103,9 @@ def create_main_window(controller, config: dict, html: str):
         width=int(size[0]),
         height=int(size[1]),
         min_size=(800, 600),
-        background_color="#0f172a",
+        # 窗口底色会作为内核 DefaultBackgroundColor：深色值可能让内核推断为深色模式
+        # （右键菜单等原生 UI 变深色，WebView2 已知问题），故使用浅色
+        background_color="#ffffff",
     )
     controller.set_window(window)
     logging.info("主窗口已创建：%s（%sx%s）", window.title, size[0], size[1])

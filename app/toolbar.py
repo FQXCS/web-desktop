@@ -270,7 +270,6 @@ TOOLBAR_SCRIPT = """
   button.addEventListener('pointermove', onPointerMove);
   button.addEventListener('pointerup', onPointerUp);
   button.addEventListener('pointercancel', onPointerCancel);
-  button.addEventListener('contextmenu', function (event) { event.preventDefault(); });
   button.addEventListener('click', function (event) {
     event.preventDefault();
     // 刚结束拖动：本次 click 是拖动的副产物，只拦截不打开配置页
