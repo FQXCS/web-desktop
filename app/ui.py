@@ -5,12 +5,14 @@ import logging
 
 import webview
 
+from app.ui_state import load_toolbar_pos, save_toolbar_pos
+
 # Windows 剪贴板格式常量：Unicode 文本（CF_UNICODETEXT）
 CF_UNICODETEXT = 13
 
 
 class BridgeApi:
-    """暴露给页面 JavaScript 调用的接口（配置页与错误页按钮）。"""
+    """暴露给页面 JavaScript 调用的接口（配置页与错误页按钮、齿轮按钮位置持久化）。"""
 
     def __init__(self, controller):
         """
@@ -59,6 +61,30 @@ class BridgeApi:
     def exit_config_page(self) -> None:
         """配置页右上角「✕」按钮回调：关闭配置页并返回来源页面。"""
         self._controller.exit_config_page()
+
+    def get_toolbar_pos(self):
+        """
+        读取齿轮按钮位置（供页面脚本查询）。
+
+        Returns:
+            {"left": float, "top": float, "vw": float, "vh": float}；无记录时返回 None。
+        """
+        return load_toolbar_pos()
+
+    def save_toolbar_pos(self, left, top, view_width=0, view_height=0) -> dict:
+        """
+        保存齿轮按钮位置（页面拖动结束时调用，写入 Python 侧状态文件）。
+
+        Args:
+            left: 图标左边缘位置（CSS 像素）。
+            top: 图标上边缘位置（CSS 像素）。
+            view_width: 当前视口宽度（CSS 像素）。
+            view_height: 当前视口高度（CSS 像素）。
+
+        Returns:
+            {"ok": bool} 结果字典。
+        """
+        return {"ok": save_toolbar_pos(left, top, view_width, view_height)}
 
     def get_clipboard_text(self):
         """

@@ -23,6 +23,8 @@ from app.pages import (
     build_wait_page,
 )
 from app.service import WebServiceError, WebServiceManager
+from app.toolbar import build_toolbar_script
+from app.ui_state import load_toolbar_pos
 
 
 class AppController:
@@ -310,7 +312,7 @@ class AppController:
         self._window.load_html(error_html)
 
     def _on_page_loaded(self) -> None:
-        """页面加载完成回调：已跳转到目标网页时注入自定义右键菜单脚本。"""
+        """页面加载完成回调：已跳转到目标网页时注入自定义右键菜单与可拖动齿轮按钮。"""
         if not self._target_loaded or self._window is None:
             return
         try:
@@ -320,6 +322,14 @@ class AppController:
         except Exception:
             # 注入失败不影响主流程，仅记录日志
             logging.exception("注入自定义右键菜单失败")
+        try:
+            # 齿轮脚本同样自带幂等标记（默认停在右下角，可拖动，单击打开配置页）；
+            # 注入时带上 Python 侧保存的位置，页面刷新与应用重启后都能还原
+            self._window.evaluate_js(build_toolbar_script(load_toolbar_pos()))
+            logging.info("已向目标网页注入可拖动齿轮按钮")
+        except Exception:
+            # 齿轮注入失败不影响右键菜单与主流程，仅记录日志
+            logging.exception("注入可拖动齿轮按钮失败")
 
     def _stop_current_service(self) -> None:
         """停止当前持有的服务管理器（幂等，可重复调用）。"""
