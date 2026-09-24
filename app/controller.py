@@ -149,7 +149,7 @@ class AppController:
             self._service = service
         # 切换回等待页，并启动后台就绪检查线程
         self._target_loaded = False
-        self._window.load_html(build_wait_page(self._config["web_url"]))
+        self._window.load_html(build_wait_page(self._config["web_url"], self._config.get("window_title")))
         threading.Thread(target=self._wait_loop, args=(service,), daemon=True).start()
 
     def retry(self) -> None:
@@ -247,7 +247,7 @@ class AppController:
             if self._last_error_html:
                 self._window.load_html(self._last_error_html)
             else:
-                self._window.load_html(build_wait_page(self._config["web_url"]))
+                self._window.load_html(build_wait_page(self._config["web_url"], self._config.get("window_title")))
 
     def stop(self) -> None:
         """清理资源：停止后台服务（窗口关闭后由入口调用）。"""
@@ -319,7 +319,7 @@ class AppController:
             message: 错误说明。
         """
         log_tail = self._service.read_log_tail() if self._service else ""
-        error_html = build_error_page(title, message, log_tail)
+        error_html = build_error_page(title, message, log_tail, window_title=self._config.get("window_title"))
         # 缓存错误页快照：配置页「✕」关闭时返回错误页
         self._last_error_html = error_html
         self._target_loaded = False

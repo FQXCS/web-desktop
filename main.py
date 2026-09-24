@@ -141,7 +141,7 @@ def main() -> int:
             logging.warning("配置不完整，进入配置页面：%s", "；".join(issues))
             create_main_window(controller, config, build_config_page(config))
         else:
-            create_main_window(controller, config, build_wait_page(config["web_url"]))
+            create_main_window(controller, config, build_wait_page(config["web_url"], config.get("window_title")))
 
         # 窗口图标：打包后从 exe 内嵌资源提取 app.ico，源码运行用根目录 app.ico
         window_icon = get_window_icon_path()

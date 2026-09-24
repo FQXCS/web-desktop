@@ -38,7 +38,7 @@ DEFAULT_CONFIG = {
     # 单次健康检查超时（秒）
     "check_timeout": 2,
     # 窗口标题
-    "window_title": "Web 桌面启动器",
+    "window_title": "WebDesktop",
     # 窗口尺寸 [宽, 高]
     "window_size": [1200, 800],
     # 是否显示服务控制台窗口（调试用）

@@ -11,48 +11,95 @@ WAIT_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>正在启动服务</title>
 <style>
+  :root { color-scheme: light; --accent: #32745e; --ink: #24332d; --muted: #68776f; --line: #e1e7e3; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: #0f172a;
-    color: #e2e8f0;
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    user-select: none;
+    font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif;
+    color: var(--ink); background: #f7f9f7;
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; flex-direction: column;
   }
-  .card { text-align: center; max-width: 520px; padding: 0 24px; }
-  .spinner {
-    width: 56px; height: 56px; margin: 0 auto 28px;
-    border: 5px solid rgba(148, 163, 184, 0.25);
-    border-top-color: #38bdf8; border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
+  svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 40px; background: #fff; border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; font-weight: 650; font-size: 17px; letter-spacing: -.4px; }
+  .brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brand .brand-icon { flex-shrink: 0; }
+  .brand-icon { width: 34px; height: 34px; background: var(--accent); color: white; border-radius: 10px; display: grid; place-items: center; }
+  .header-label { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+  main { flex: 1; display: grid; place-items: center; padding: 48px 24px; }
+  .wait-content { width: 100%; max-width: 520px; min-width: 0; }
+  .intro { text-align: center; margin-bottom: 30px; }
+  .loading-icon { position: relative; width: 72px; height: 72px; margin: 0 auto 24px; display: grid; place-items: center; color: var(--accent); }
+  .loading-icon::before { content: ""; position: absolute; inset: 10px; background: #eaf2ec; border-radius: 50%; }
+  .loading-icon svg { position: relative; width: 24px; height: 24px; }
+  .spinner { position: absolute; inset: 0; border: 3px solid #e1eae3; border-top-color: var(--accent); border-radius: 50%; animation: spin 1.2s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .title { font-size: 20px; font-weight: 600; letter-spacing: 1px; }
-  .sub { margin-top: 10px; font-size: 14px; color: #94a3b8; }
-  .timer { margin-top: 8px; font-size: 13px; color: #64748b; font-variant-numeric: tabular-nums; }
-  .url {
-    margin-top: 22px; font-size: 13px; color: #38bdf8;
-    word-break: break-all; font-family: Consolas, monospace;
+  h1 { font-size: 24px; font-weight: 650; letter-spacing: -.4px; }
+  .sub { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .card { border: 1px solid var(--line); background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 4px #263b2d02; }
+  .card-header { padding: 16px 22px; border-bottom: 1px solid #edf0ed; display: flex; align-items: center; gap: 10px; }
+  .card-header svg { color: var(--accent); width: 18px; height: 18px; }
+  h2 { font-size: 14px; font-weight: 600; }
+  .status-badge { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; color: var(--accent); border: 1px solid #dce9df; background: #f6faf6; border-radius: 5px; font-size: 11px; white-space: nowrap; }
+  .status-badge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .card-body { padding: 22px; }
+  .url-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .url { display: block; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: #fcfdfc; color: var(--accent); font: 13px/1.8 Consolas, "Microsoft YaHei", monospace; overflow-wrap: anywhere; user-select: text; }
+  .connection-meta { margin-top: 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); font-size: 12px; }
+  .timer { display: flex; align-items: center; gap: 7px; }
+  .timer svg { width: 15px; height: 15px; }
+  #sec { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .hint { display: flex; align-items: flex-start; gap: 8px; margin-top: 18px; padding: 0 3px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+  .hint svg { width: 15px; height: 15px; margin-top: 2px; }
+  .window-note { padding: 0 24px 24px; color: var(--muted); text-align: center; font-size: 11px; }
+  @media (max-width: 560px) {
+    .page-header { padding: 16px 20px; }
+    .header-label { font-size: 11px; }
+    main { padding: 36px 20px; }
+    h1 { font-size: 22px; }
+    .card-header { padding: 14px 18px; }
+    .card-body { padding: 18px; }
   }
-  .hint { margin-top: 30px; font-size: 12px; color: #475569; line-height: 1.8; }
+  @media (max-height: 700px) {
+    .page-header { padding-top: 16px; padding-bottom: 16px; }
+    main { padding-top: 24px; padding-bottom: 24px; }
+    .loading-icon { margin-bottom: 18px; }
+    .intro { margin-bottom: 24px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>
 </head>
 <body>
-  <div class="card">
-    <div class="spinner"></div>
-    <div class="title">正在启动服务，请稍候…</div>
-    <div class="sub">服务就绪后将自动打开页面</div>
-    <div class="timer">已等待 <span id="sec">0</span> 秒</div>
-    <div class="url">$TARGET_URL</div>
-    <div class="hint">如果长时间无响应，请检查启动命令与服务地址配置<br>关闭窗口将按配置最小化到系统托盘或退出程序</div>
-  </div>
+  <header class="page-header">
+    <div class="brand"><span class="brand-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m-5-10 3 3-3 3m6 0h4"/></svg></span><span class="brand-name" title="$WINDOW_TITLE">$WINDOW_TITLE</span></div>
+    <span class="header-label">工作空间 / 启动</span>
+  </header>
+  <main>
+    <div class="wait-content">
+      <div class="intro" role="status">
+        <div class="loading-icon" aria-hidden="true"><div class="spinner"></div><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></div>
+        <h1>正在启动服务</h1>
+        <p class="sub">稍等片刻，服务就绪后将自动打开页面。</p>
+      </div>
+      <section class="card" aria-labelledby="connection-title">
+        <div class="card-header"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h5l3-8 4 16 3-8h5"/></svg><h2 id="connection-title">服务连接</h2><span class="status-badge">启动中</span></div>
+        <div class="card-body">
+          <p class="url-label" id="url-label">服务地址</p>
+          <code class="url" aria-labelledby="url-label">$TARGET_URL</code>
+          <div class="connection-meta">
+            <div class="timer" role="timer" aria-live="off"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>已等待 <span id="sec">0</span> 秒</span></div>
+            <span>正在检查服务是否就绪</span>
+          </div>
+        </div>
+      </section>
+      <p class="hint"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg><span>如果长时间无响应，请检查启动命令与服务地址配置。</span></p>
+    </div>
+  </main>
+  <footer class="window-note">关闭窗口将按配置最小化到系统托盘或退出程序</footer>
   <script>
-    // 页面加载时刻作为计时起点
     var startAt = Date.now();
     setInterval(function () {
       var seconds = Math.floor((Date.now() - startAt) / 1000);
@@ -68,60 +115,101 @@ ERROR_PAGE_TEMPLATE = Template("""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>$ERROR_TITLE</title>
 <style>
+  :root { color-scheme: light; --accent: #32745e; --ink: #24332d; --muted: #68776f; --line: #e1e7e3; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: #0f172a;
-    color: #e2e8f0;
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif;
+    color: var(--ink); background: #f7f9f7;
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; flex-direction: column;
   }
-  .card { width: 640px; max-width: 92vw; background: #1e293b; border-radius: 12px; padding: 36px 40px; }
-  .icon {
-    width: 52px; height: 52px; margin: 0 auto 20px;
-    border-radius: 50%; background: rgba(248, 113, 113, 0.15);
-    color: #f87171; font-size: 30px; font-weight: 700;
-    display: flex; align-items: center; justify-content: center;
+  svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 40px; background: #fff; border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; font-weight: 650; font-size: 17px; letter-spacing: -.4px; }
+  .brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brand .brand-icon { flex-shrink: 0; }
+  .brand-icon { width: 34px; height: 34px; background: var(--accent); color: white; border-radius: 10px; display: grid; place-items: center; }
+  .header-label { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+  main { flex: 1; display: grid; place-items: center; padding: 32px 24px; }
+  .error-content { width: 100%; max-width: 680px; min-width: 0; }
+  .card { border: 1px solid var(--line); background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 4px #263b2d02; }
+  .error-summary { display: flex; align-items: flex-start; gap: 16px; padding: 28px; }
+  .error-icon { width: 48px; height: 48px; display: grid; place-items: center; flex-shrink: 0; border: 1px solid #f0d8d2; border-radius: 12px; background: #fff4f2; color: #b55c4e; }
+  .error-icon svg { width: 24px; height: 24px; }
+  .error-copy { min-width: 0; }
+  h1 { font-size: 22px; font-weight: 650; letter-spacing: -.4px; overflow-wrap: anywhere; }
+  .message { margin-top: 8px; font-size: 13px; color: var(--muted); line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .log-box { display: $LOG_DISPLAY; margin: 0 28px 28px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .log-header { padding: 12px 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+  .log-header svg { color: var(--accent); width: 16px; height: 16px; }
+  h2 { font-size: 13px; font-weight: 600; }
+  .log-limit { margin-left: auto; font-size: 11px; color: var(--muted); background: #f3f6f3; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+  .log-content { max-height: 220px; overflow: auto; padding: 14px 16px; background: #f7f9f7; color: #53645a; font: 12px/1.8 Consolas, "Microsoft YaHei", monospace; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: #bccbc1 #f7f9f7; }
+  .log-content:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 18px 28px; border-top: 1px solid var(--line); }
+  .btn { display: inline-flex; justify-content: center; align-items: center; gap: 7px; padding: 9px 16px; border: 1px solid transparent; border-radius: 6px; font: 12px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; white-space: nowrap; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; }
+  .btn svg { width: 15px; height: 15px; }
+  .btn:focus-visible { outline: 3px solid #8db9a5; outline-offset: 3px; }
+  .btn-primary { background: var(--accent); color: white; font-weight: 600; box-shadow: 0 2px 3px #32745e16; }
+  .btn-primary:hover { background: #285e4d; }
+  .btn-ghost { background: white; border-color: var(--line); color: #64736a; }
+  .btn-ghost:hover { background: #f3f6f3; }
+  .btn-exit { margin-left: auto; }
+  .hint { display: flex; align-items: flex-start; gap: 8px; margin-top: 18px; padding: 0 3px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+  .hint svg { width: 15px; height: 15px; margin-top: 2px; }
+  @media (max-width: 560px) {
+    .page-header { padding: 16px 20px; }
+    .header-label { font-size: 11px; }
+    main { padding: 24px 20px; }
+    .error-summary { padding: 20px; gap: 12px; }
+    .error-icon { width: 40px; height: 40px; border-radius: 10px; }
+    h1 { font-size: 20px; }
+    .log-box { margin: 0 20px 20px; }
+    .log-header, .log-content { padding: 12px; }
+    .actions { padding: 16px 20px; gap: 8px; }
+    .btn { padding: 9px 12px; }
   }
-  .title { text-align: center; font-size: 19px; font-weight: 600; }
-  .message { margin-top: 14px; font-size: 14px; color: #94a3b8; line-height: 1.8; white-space: pre-wrap; }
-  .log-box { display: $LOG_DISPLAY; margin-top: 18px; }
-  .log-label { font-size: 12px; color: #64748b; margin-bottom: 8px; }
-  .log-content {
-    max-height: 220px; overflow: auto; padding: 12px 14px;
-    background: #0f172a; border-radius: 8px;
-    font-family: Consolas, monospace; font-size: 12px;
-    color: #cbd5e1; line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+  @media (max-width: 380px) {
+    .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .btn-exit { grid-column: 1 / -1; margin-left: 0; }
   }
-  .actions { margin-top: 28px; display: flex; justify-content: center; gap: 14px; }
-  .btn {
-    min-width: 110px; padding: 10px 22px; border: none; border-radius: 8px;
-    font-size: 14px; cursor: pointer; transition: opacity .15s;
+  @media (max-height: 700px) {
+    .page-header { padding-top: 16px; padding-bottom: 16px; }
+    main { padding-top: 24px; padding-bottom: 24px; }
+    .error-summary { padding-top: 22px; padding-bottom: 22px; }
+    .log-content { max-height: 160px; }
   }
-  .btn:hover { opacity: 0.85; }
-  .btn-primary { background: #38bdf8; color: #0f172a; font-weight: 600; }
-  .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #475569; }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
 </style>
 </head>
 <body>
-  <div class="card">
-    <div class="icon">!</div>
-    <div class="title">$ERROR_TITLE</div>
-    <div class="message">$ERROR_MESSAGE</div>
-    <div class="log-box">
-      <div class="log-label">服务日志（末尾 $LOG_LINES 行）：</div>
-      <div class="log-content">$LOG_TAIL</div>
+  <header class="page-header">
+    <div class="brand"><span class="brand-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m-5-10 3 3-3 3m6 0h4"/></svg></span><span class="brand-name" title="$WINDOW_TITLE">$WINDOW_TITLE</span></div>
+    <span class="header-label">工作空间 / 服务异常</span>
+  </header>
+  <main>
+    <div class="error-content">
+      <section class="card" aria-labelledby="error-title">
+        <div class="error-summary" role="alert">
+          <div class="error-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 3v1"/></svg></div>
+          <div class="error-copy"><h1 id="error-title">$ERROR_TITLE</h1><p class="message">$ERROR_MESSAGE</p></div>
+        </div>
+        <section class="log-box" aria-labelledby="log-title">
+          <div class="log-header"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V8zM14 3v5h5M8 12h8m-8 4h6"/></svg><h2 id="log-title">服务日志</h2><span class="log-limit">末尾 $LOG_LINES 行</span></div>
+          <pre class="log-content" tabindex="0" role="region" aria-label="服务日志内容">$LOG_TAIL</pre>
+        </section>
+        <footer class="actions">
+          <button type="button" class="btn btn-primary" onclick="pywebview.api.retry()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg>重试</button>
+          <button type="button" class="btn btn-ghost" onclick="pywebview.api.open_config_page('error')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h7m4 0h5M4 17h3m4 0h9"/><circle cx="13" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>打开配置</button>
+          <button type="button" class="btn btn-ghost btn-exit" onclick="pywebview.api.exit_app()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v16h5m5-12 4 4-4 4m-6-4h14"/></svg>退出</button>
+        </footer>
+      </section>
+      <p class="hint"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg><span>可以重试启动服务，或打开配置检查启动命令与服务地址。</span></p>
     </div>
-    <div class="actions">
-      <button class="btn btn-primary" onclick="pywebview.api.retry()">重 试</button>
-      <button class="btn btn-ghost" onclick="pywebview.api.open_config_page('error')">打开配置</button>
-      <button class="btn btn-ghost" onclick="pywebview.api.exit_app()">退 出</button>
-    </div>
-  </div>
+  </main>
 </body>
 </html>
 """)
@@ -145,8 +233,9 @@ CONFIG_PAGE_TEMPLATE = Template(r"""<!DOCTYPE html>
   svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
   .app-shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); height: 100vh; height: 100dvh; }
   .sidebar { padding: 32px 20px 22px; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #f0f4f0; min-height: 0; }
-  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; font-weight: 650; font-size: 17px; letter-spacing: -.4px; }
-  .brand-icon { width: 34px; height: 34px; background: var(--accent); color: white; border-radius: 10px; display: grid; place-items: center; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; min-width: 0; font-weight: 650; font-size: 17px; letter-spacing: -.4px; }
+  .brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brand-icon { width: 34px; height: 34px; background: var(--accent); color: white; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; }
   .nav-label { margin: 42px 12px 12px; color: #78857d; font-size: 11px; letter-spacing: 2px; }
   .nav-list { display: grid; gap: 6px; }
   .nav-item { border: 1px solid transparent; color: #66766c; background: transparent; border-radius: 8px; padding: 12px; display: flex; align-items: center; gap: 11px; text-align: left; }
@@ -285,7 +374,7 @@ CONFIG_PAGE_TEMPLATE = Template(r"""<!DOCTYPE html>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m-5-10 3 3-3 3m6 0h4"/></svg></span>WebDesktop</div>
+      <div class="brand"><span class="brand-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m-5-10 3 3-3 3m6 0h4"/></svg></span><span class="brand-name" title="$WINDOW_TITLE">$WINDOW_TITLE</span></div>
       <div class="nav-label">工作空间 / 设置</div>
       <nav class="nav-list" role="tablist" aria-label="配置分类" aria-orientation="vertical">
         <button type="button" class="nav-item" id="tab-service" role="tab" aria-controls="panel-service" aria-selected="true" tabindex="0" data-panel="service"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3m6 0h4"/></svg>服务连接<span class="nav-number">01</span></button>
@@ -657,20 +746,26 @@ CONFIG_PAGE_TEMPLATE = Template(r"""<!DOCTYPE html>
 """)
 
 
-def build_wait_page(target_url: str) -> str:
+def build_wait_page(target_url: str, window_title: str | None = None) -> str:
     """
     生成「等待服务启动」页面 HTML。
 
     Args:
         target_url: 目标服务地址，展示在页面上。
+        window_title: 配置中的窗口标题。
 
     Returns:
         完整 HTML 字符串。
     """
-    return WAIT_PAGE_TEMPLATE.substitute(TARGET_URL=html.escape(target_url))
+    return WAIT_PAGE_TEMPLATE.substitute(
+        TARGET_URL=html.escape(target_url),
+        WINDOW_TITLE=html.escape((window_title or "").strip() or "WebDesktop"),
+    )
 
 
-def build_error_page(title: str, message: str, log_tail: str = "", max_log_lines: int = 30) -> str:
+def build_error_page(
+    title: str, message: str, log_tail: str = "", max_log_lines: int = 30, *, window_title: str | None = None,
+) -> str:
     """
     生成错误提示页 HTML。
 
@@ -679,6 +774,7 @@ def build_error_page(title: str, message: str, log_tail: str = "", max_log_lines
         message: 错误说明文字。
         log_tail: 服务日志末尾内容，为空时隐藏日志区域。
         max_log_lines: 日志最多展示行数（仅用于标签展示）。
+        window_title: 配置中的窗口标题。
 
     Returns:
         完整 HTML 字符串。
@@ -689,6 +785,7 @@ def build_error_page(title: str, message: str, log_tail: str = "", max_log_lines
         LOG_DISPLAY="block" if log_tail else "none",
         LOG_LINES=max_log_lines,
         LOG_TAIL=html.escape(log_tail),
+        WINDOW_TITLE=html.escape((window_title or "").strip() or "WebDesktop"),
     )
 
 
@@ -710,6 +807,7 @@ def build_config_page(config: dict, config_path: str = "", show_close: bool = Fa
         CONFIG_JSON=config_json,
         CONFIG_PATH=html.escape(config_path or get_config_path()),
         CLOSE_DISPLAY="block" if show_close else "none",
+        WINDOW_TITLE=html.escape((config.get("window_title") or "").strip() or "WebDesktop"),
     )
 
 
