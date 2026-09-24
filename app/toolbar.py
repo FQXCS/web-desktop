@@ -12,7 +12,7 @@
 - 仅使用 pointerdown / pointermove / pointerup + setPointerCapture，
   并通过位移阈值区分「单击」与「拖动」，避免拖动后误触发打开配置页。
 - 默认位置用 CSS `right / bottom` 表达，不依赖 DOM 测量即可正确落位；
-  还原位置时改用 left / top，并按窗口尺寸换算 + 限位，保证始终可见。
+  拖动后按可移动区域的横纵比例定位，窗口缩放不覆盖原始比例。
 - 脚本幂等：window.__wbdToolbarInjected 标记防止整页刷新、导航后重复注入。
 """
 
@@ -84,6 +84,7 @@ TOOLBAR_SCRIPT = """
 
   var wrap = shadow.querySelector('.wrap');
   var button = shadow.querySelector('.btn');
+  var positionRatio = null;
 
   // 由 Python 侧注入的已保存位置（注入时定值，不依赖页面存储）
   var INITIAL_POS = %(initial_pos)s;
@@ -93,8 +94,8 @@ TOOLBAR_SCRIPT = """
   // localStorage 在 pywebview 私有模式下不跨应用重启保留，仅作为兜底。
   function savePos(left, top) {
     var payload = {
-      left: Math.round(left),
-      top: Math.round(top),
+      left: left,
+      top: top,
       vw: window.innerWidth,
       vh: window.innerHeight
     };
@@ -138,15 +139,19 @@ TOOLBAR_SCRIPT = """
     }, 200);
   }
 
+  function movementRange(vw, vh) {
+    return {
+      width: Math.max(0, vw - (wrap.offsetWidth || 34) - 2 * EDGE_GAP),
+      height: Math.max(0, vh - (wrap.offsetHeight || 34) - 2 * EDGE_GAP)
+    };
+  }
+
   // 将坐标限制在视口内，保证图标始终可见（至少保留可点击区域）
   function clamp(left, top) {
-    var width = wrap.offsetWidth || 34;
-    var height = wrap.offsetHeight || 34;
-    var maxLeft = window.innerWidth - width - EDGE_GAP;
-    var maxTop = window.innerHeight - height - EDGE_GAP;
+    var range = movementRange(window.innerWidth, window.innerHeight);
     return {
-      left: Math.max(EDGE_GAP, Math.min(left, maxLeft)),
-      top: Math.max(EDGE_GAP, Math.min(top, maxTop))
+      left: Math.max(EDGE_GAP, Math.min(left, EDGE_GAP + range.width)),
+      top: Math.max(EDGE_GAP, Math.min(top, EDGE_GAP + range.height))
     };
   }
 
@@ -158,8 +163,22 @@ TOOLBAR_SCRIPT = """
     wrap.style.top = top + 'px';
   }
 
-  // 注入时还原位置：Python 侧状态优先（同一应用会话内页面刷新依旧生效），
-  // 没有时再看页面 localStorage 兜底；按窗口尺寸变化换算后限位
+  function setPositionRatio(left, top, vw, vh) {
+    var range = movementRange(vw, vh);
+    positionRatio = {
+      x: Math.max(0, Math.min(1, (left - EDGE_GAP) / (range.width || 1))),
+      y: Math.max(0, Math.min(1, (top - EDGE_GAP) / (range.height || 1)))
+    };
+  }
+
+  function applyPositionRatio() {
+    if (!positionRatio) { return; }
+    var range = movementRange(window.innerWidth, window.innerHeight);
+    // 缩放只换算显示坐标，不反推比例，避免往返缩放积累误差。
+    place(EDGE_GAP + positionRatio.x * range.width, EDGE_GAP + positionRatio.y * range.height);
+  }
+
+  // 注入时还原位置：Python 侧状态优先，否则使用页面 localStorage。
   function restorePos() {
     var pos = INITIAL_POS;
     if (!pos) {
@@ -174,10 +193,8 @@ TOOLBAR_SCRIPT = """
     if (!pos || typeof pos.left !== 'number' || typeof pos.top !== 'number') { return; }
     var vw = pos.vw || window.innerWidth;
     var vh = pos.vh || window.innerHeight;
-    var left = pos.left * (window.innerWidth / vw);
-    var top = pos.top * (window.innerHeight / vh);
-    var point = clamp(left, top);
-    place(point.left, point.top);
+    setPositionRatio(pos.left, pos.top, vw, vh);
+    applyPositionRatio();
   }
 
   // 当前图标位置：优先取 left，未拖动过（left 为 auto）时回退到 CSS 右下角实测值
@@ -240,6 +257,7 @@ TOOLBAR_SCRIPT = """
     // 拖动期间阻止默认行为，避免选中目标网页文字
     event.preventDefault();
     var point = clamp(event.clientX - offsetX, event.clientY - offsetY);
+    setPositionRatio(point.left, point.top, window.innerWidth, window.innerHeight);
     place(point.left, point.top);
   }
 
@@ -253,6 +271,7 @@ TOOLBAR_SCRIPT = """
     // 标记「刚结束一次拖动」：本次 pointerup 之后浏览器仍会派发 click，必须拦掉
     suppressClick = true;
     var point = clamp(event.clientX - offsetX, event.clientY - offsetY);
+    setPositionRatio(point.left, point.top, window.innerWidth, window.innerHeight);
     place(point.left, point.top);
     savePos(point.left, point.top);
     // 拖动结束清除可能残留的页面文字选区
@@ -287,12 +306,7 @@ TOOLBAR_SCRIPT = """
     }
   });
 
-  // 窗口尺寸变化：重新限位，避免图标被挤出可视区域
-  window.addEventListener('resize', function () {
-    var point = currentPoint();
-    var clamped = clamp(point.left, point.top);
-    place(clamped.left, clamped.top);
-  });
+  window.addEventListener('resize', applyPositionRatio);
 
   restorePos();
 })();
@@ -310,7 +324,7 @@ def build_toolbar_script(pos=None) -> str:
 
     Args:
         pos: 已保存的位置（app.ui_state.load_toolbar_pos 的返回值）；None 表示
-            使用默认右下角。位置以 JSON 字面量嵌入脚本，按窗口尺寸换算后限位。
+            使用默认右下角。由保存的坐标与视口尺寸还原可移动区域内的横纵比例。
 
     Returns:
         可交由 window.evaluate_js 执行的注入脚本字符串。

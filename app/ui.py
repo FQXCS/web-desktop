@@ -103,6 +103,7 @@ def create_main_window(controller, config: dict, html: str):
         width=int(size[0]),
         height=int(size[1]),
         min_size=(800, 600),
+        text_select=True,
         # 窗口底色会作为内核 DefaultBackgroundColor：深色值可能让内核推断为深色模式
         # （右键菜单等原生 UI 变深色，WebView2 已知问题），故使用浅色
         background_color="#ffffff",
