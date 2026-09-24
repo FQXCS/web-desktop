@@ -4,6 +4,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 
 # 开发模式：优先从工作区 .site 目录加载第三方依赖（沙箱环境下系统 site-packages 不可写）
 _SITE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".site")
@@ -17,6 +18,7 @@ from app.controller import AppController  # noqa: E402
 from app.pages import build_config_page, build_wait_page  # noqa: E402
 from app.tray import SystemTray  # noqa: E402
 from app.ui import create_main_window  # noqa: E402
+from app.webview_settings import wait_for_browser_exit  # noqa: E402
 
 LOG_FILE_NAME = "app.log"
 
@@ -159,8 +161,17 @@ def main() -> int:
         tray.start()
 
         try:
-            # webview.start 会阻塞直到所有窗口关闭；controller.start 在其子线程中执行
-            webview.start(controller.start, debug=False, icon=window_icon)
+            with tempfile.TemporaryDirectory(prefix="webdesktop-") as storage_path:
+                try:
+                    webview.start(
+                        controller.start,
+                        debug=False,
+                        icon=window_icon,
+                        private_mode=config["private_mode"] is True,
+                        storage_path=storage_path,
+                    )
+                finally:
+                    wait_for_browser_exit()
         finally:
             # 窗口已关闭：停止后台服务进程，并移除托盘图标
             controller.stop()

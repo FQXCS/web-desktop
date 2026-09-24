@@ -47,6 +47,7 @@ class KernelPreferencesTests(unittest.TestCase):
         }))
         self.light_scheme = self.enterContext(patch('app.webview_settings._apply_light_color_scheme'))
         self.menu_filter = self.enterContext(patch('app.webview_settings._subscribe_menu_filter'))
+        self.track_process = self.enterContext(patch('app.webview_settings._track_browser_process'))
 
     def test_core_is_only_read_on_ui_thread(self):
         self.assertTrue(apply_kernel_preferences(self.window))
@@ -92,6 +93,44 @@ class KernelPreferencesTests(unittest.TestCase):
         with self.assertLogs(level='ERROR'):
             self.assertFalse(apply_kernel_preferences(self.window))
         self.menu_filter.assert_not_called()
+
+
+class BrowserExitTests(unittest.TestCase):
+    def test_tracks_only_the_current_browser_process_once(self):
+        import app.webview_settings as preferences
+        process_api = Mock()
+        with patch.object(preferences, '_browser_process', None), patch.dict(sys.modules, {
+            'System.Diagnostics': SimpleNamespace(Process=process_api),
+        }):
+            preferences._track_browser_process(SimpleNamespace(BrowserProcessId=123))
+            preferences._track_browser_process(SimpleNamespace(BrowserProcessId=123))
+            process_api.GetProcessById.assert_called_once_with(123)
+            self.assertIs(preferences._browser_process, process_api.GetProcessById.return_value)
+
+    def test_waits_for_browser_exit_before_releasing_handle(self):
+        import app.webview_settings as preferences
+        process = Mock()
+        process.WaitForExit.return_value = True
+        with patch.object(preferences, '_browser_process', process):
+            preferences.wait_for_browser_exit()
+            process.WaitForExit.assert_called_once_with(10000)
+            process.Dispose.assert_called_once()
+            self.assertIsNone(preferences._browser_process)
+
+    def test_timeout_is_reported_and_handle_is_released(self):
+        import app.webview_settings as preferences
+        process = Mock()
+        process.WaitForExit.return_value = False
+        with patch.object(preferences, '_browser_process', process):
+            with self.assertRaises(TimeoutError):
+                preferences.wait_for_browser_exit()
+            process.Dispose.assert_called_once()
+            self.assertIsNone(preferences._browser_process)
+
+    def test_no_browser_was_started(self):
+        import app.webview_settings as preferences
+        with patch.object(preferences, '_browser_process', None):
+            preferences.wait_for_browser_exit()
 
 
 if __name__ == '__main__':

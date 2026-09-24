@@ -43,6 +43,7 @@ DEFAULT_CONFIG = {
     "window_size": [1200, 800],
     # 是否显示服务控制台窗口（调试用）
     "show_console": False,
+    "private_mode": False,
     # 退出程序时是否终止服务进程（最小化到系统托盘期间服务不受影响）
     "kill_on_exit": True,
     # 关闭窗口动作：minimize_to_tray 最小化到系统托盘 / exit 退出程序
@@ -176,7 +177,7 @@ def get_config_issues(config: dict) -> list:
     if not valid_size:
         issues.append("window_size（窗口尺寸）必须是 [宽, 高] 两个正数")
 
-    for key in ("show_console", "kill_on_exit"):
+    for key in ("show_console", "kill_on_exit", "private_mode"):
         if not isinstance(config.get(key), bool):
             issues.append(f"{key} 必须是布尔值（true/false）")
 
@@ -261,7 +262,7 @@ def build_config_from_form(data: dict):
     config["window_size"] = [int(width), int(height)]
 
     # 布尔字段：接受布尔值与 "true"/"false" 字符串
-    for key in ("show_console", "kill_on_exit"):
+    for key in ("show_console", "kill_on_exit", "private_mode"):
         boolean = _parse_bool(data.get(key))
         if boolean is None:
             return {}, f"{key} 必须是布尔值（true/false）"

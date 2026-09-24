@@ -326,13 +326,7 @@ class AppController:
         self._window.load_html(error_html)
 
     def _apply_kernel_preferences_when_ready(self) -> None:
-        """
-        等待 WebView2 内核就绪后立即应用内核偏好（后台线程）。
-
-        设置越早越可靠：若等到页面加载完成后再设置，内核可能已按旧配色绘制原生 UI，
-        出现「设置成功但右键菜单仍是深色」的现象。此处轮询到内核可访问即设置，
-        超时则交由页面加载后的兜底逻辑继续尝试。
-        """
+        """尽早应用内核偏好，默认菜单开关需在下一次导航时才会生效。"""
         deadline = time.monotonic() + KERNEL_READY_TIMEOUT
         while not self.stop_event.is_set() and time.monotonic() < deadline:
             if self._kernel_defaults_applied:

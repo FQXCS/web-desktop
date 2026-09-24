@@ -32,6 +32,7 @@ _menu_filter_installed = False
 
 # 菜单项清单是否已记录（仅首次右键记录一次，便于核对内核实际的菜单项名称）
 _menu_items_logged = False
+_browser_process = None
 
 
 def apply_kernel_preferences(window, *, accelerator_keys: bool = True) -> bool:
@@ -83,6 +84,7 @@ def apply_kernel_preferences(window, *, accelerator_keys: bool = True) -> bool:
         settings = getattr(core, "Settings", None)
         if settings is None:
             return
+        _track_browser_process(core)
         # 1. 内核默认能力：右键菜单恒开，浏览器快捷键按参数决定
         setattr(settings, SETTING_CONTEXT_MENUS, True)
         if accelerator_keys:
@@ -100,6 +102,28 @@ def apply_kernel_preferences(window, *, accelerator_keys: bool = True) -> bool:
         logging.exception("应用 WebView2 内核偏好失败")
         return False
     return applied
+
+
+def _track_browser_process(core) -> None:
+    global _browser_process
+    if _browser_process is None:
+        from System.Diagnostics import Process
+
+        _browser_process = Process.GetProcessById(core.BrowserProcessId)
+
+
+def wait_for_browser_exit() -> None:
+    global _browser_process
+    process = _browser_process
+    _browser_process = None
+    if process is None:
+        return
+    try:
+        # 普通模式关闭窗口后仍可能短暂占用配置目录，退出后才能删除临时数据。
+        if not process.WaitForExit(10000):
+            raise TimeoutError("等待 WebView2 退出超时，无法清理临时浏览器数据")
+    finally:
+        process.Dispose()
 
 
 def _get_native(window):
@@ -134,16 +158,7 @@ def _get_core(native):
 
 
 def _apply_light_color_scheme(core) -> None:
-    """
-    让内核 UI（右键菜单、对话框、提示框）使用浅色配色（只能在 UI 线程内调用）。
-
-    PreferredColorScheme 默认为 Auto，本应用中会得到深色菜单；显式设为 Light 即可与
-    浅色系统主题保持一致。该属性经 prefers-color-scheme 媒体特性生效，而目标网页未使用
-    该特性（已核实），因此页面自身配色不受影响。
-
-    Args:
-        core: CoreWebView2 对象。
-    """
+    """在 UI 线程设置浅色偏好；InPrivate 的原生菜单可能仍使用深色。"""
     profile = getattr(core, "Profile", None)
     if profile is None:
         # 内核版本过旧：跳过浅色设置，其余设置照常生效
