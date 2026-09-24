@@ -62,15 +62,6 @@ def apply_kernel_preferences(window, *, accelerator_keys: bool = True) -> bool:
     if native is None:
         return False
 
-    # 就绪预检：内核尚未初始化完成时直接返回，避免轮询期间无谓的跨线程封送
-    # （该属性为托管属性读取，不触发内核调用；异常时按原路径继续尝试封送）
-    try:
-        control = getattr(native, "webview", None)
-        if getattr(control, "CoreWebView2", None) is None:
-            return False
-    except Exception:
-        logging.debug("读取 WebView2 控件状态失败，继续尝试封送设置")
-
     try:
         # pythonnet 已由 pywebview 的 winforms 模块加载；延迟导入避免启动期强依赖
         from System import Func, Type
@@ -82,8 +73,9 @@ def apply_kernel_preferences(window, *, accelerator_keys: bool = True) -> bool:
     applied = False
 
     def apply_preferences() -> None:
-        """在 UI 线程内写入内核设置并订阅菜单事件（非 UI 线程访问内核对象会抛异常）。"""
+        """在 UI 线程内写入内核设置并订阅菜单事件。"""
         nonlocal applied
+        # CoreWebView2 的就绪检查也必须在 UI 线程内，跨线程读取会在初始化时死锁。
         core = _get_core(native)
         if core is None:
             # 非 EdgeChromium 后端（如 MSHTML）或内核尚未初始化完成

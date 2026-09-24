@@ -125,6 +125,12 @@ class AppController:
         """启动流程（首次启动与错误页「重试」共用）；配置模式下不启动服务。"""
         if self._window is None or self.stop_event.is_set() or self._config_mode:
             return
+        # 首屏未加载完成时切换页面，会被 WebView2 初始化时的初始 HTML 覆盖。
+        while not self.stop_event.is_set():
+            if self._window.events.loaded.wait(0.1):
+                break
+        if self.stop_event.is_set():
+            return
         # 先停止可能残留的旧服务进程，避免重复启动
         self._stop_current_service()
 
